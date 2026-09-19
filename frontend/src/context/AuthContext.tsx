@@ -24,7 +24,7 @@ const demoOfficer: User = {
   id: 'usr_officer_01',
   name: 'محمد سامي',
   nameEn: 'Mohamed Sami',
-  email: 'mohamed.sami@credix.bank.eg',
+  email: 'mohamed.sami@credix.demo',
   role: 'officer',
   title: 'كبير مسؤولي الائتمان',
   titleEn: 'Senior Credit Officer',
@@ -34,7 +34,7 @@ const demoClient: User = {
   id: 'usr_client_01',
   name: 'أحمد فؤاد عبد الله',
   nameEn: 'Ahmed Fouad Abdallah',
-  email: 'ahmed.fouad@gmail.com',
+  email: 'ahmed.fouad@credix.demo',
   role: 'client',
   title: 'مقدم طلب تمويل',
   titleEn: 'Financing Applicant',
@@ -75,6 +75,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isDemoMode) {
+      const storedRole = typeof window !== 'undefined' ? sessionStorage.getItem('credix_demo_role') : null;
+      if (storedRole === 'officer') {
+        setUser(demoOfficer);
+      } else if (storedRole === 'client') {
+        setUser(demoClient);
+      } else {
+        setUser(null);
+      }
       setIsLoading(false);
       return;
     }
@@ -116,6 +124,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isDemoMode) {
       await new Promise((resolve) => window.setTimeout(resolve, 180));
       const demoProfile = expectedRole === 'officer' ? demoOfficer : demoClient;
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('credix_demo_role', expectedRole);
+      }
       setSession(null);
       setUser(demoProfile);
       setIsLoading(false);
@@ -131,6 +142,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (isDemoMode) {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('credix_demo_role');
+      }
       setSession(null);
       setUser(null);
       setIsLoading(false);

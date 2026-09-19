@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Globe2,
+  ShieldCheck,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import LandingLogo from '@/components/landing/LandingLogo';
@@ -22,15 +23,21 @@ export default function LandingPage() {
 
       <header className="landing-nav">
         <div className="landing-container landing-nav__inner">
-          <LandingLogo />
+          <LandingLogo className="scale-90 sm:scale-100 origin-start shrink-0" />
           <div className="landing-nav__actions">
             <button type="button" className="landing-language" onClick={toggleLanguage} aria-label={isArabic ? 'Switch to English' : 'التبديل إلى العربية'}>
-              <Globe2 size={16} aria-hidden="true" />
-              <span>{isArabic ? 'English' : 'العربية'}</span>
+              <Globe2 size={15} aria-hidden="true" />
+              <span className="text-xs font-bold">{isArabic ? 'English' : 'العربية'}</span>
             </button>
-            <Link href="/auth/login?role=officer" className="landing-nav__portal">{t('landing.ctaOfficer')}</Link>
+            <Link href="/auth/login?role=officer" className="landing-nav__portal">
+              <ShieldCheck className="w-3.5 h-3.5 text-brand-navy shrink-0" />
+              <span className="hidden sm:inline">{t('landing.ctaOfficer')}</span>
+              <span className="sm:hidden">{isArabic ? 'موظف الائتمان' : 'Credit Officer'}</span>
+            </Link>
             <Link href="/auth/login?role=client&redirect=/apply" className="landing-button landing-button--nav landing-button--primary">
-              <span>{t('landing.ctaApplicant')}</span><Arrow size={16} aria-hidden="true" />
+              <span className="hidden sm:inline">{t('landing.ctaApplicant')}</span>
+              <span className="sm:hidden">{isArabic ? 'تقديم طلب' : 'Apply'}</span>
+              <Arrow size={14} aria-hidden="true" />
             </Link>
           </div>
         </div>

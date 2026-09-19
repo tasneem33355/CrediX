@@ -66,33 +66,33 @@ export default function CaseManagementPage() {
       case 'إشارة احتيال':
       case 'Fraud Flag':
         return {
-          bg: 'bg-rose-50 text-rose-700 border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60',
-          icon: <AlertTriangle className="w-3 h-3 text-rose-600 dark:text-rose-400" />,
+          bg: 'bg-[#FEE2E2] text-[#991B1B] border-[#F87171]',
+          icon: <AlertTriangle className="w-3 h-3 text-[#DC2626] shrink-0" />,
         };
       case 'تم الاعتماد':
       case 'Approved':
         return {
-          bg: 'bg-emerald-50 text-emerald-700 border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60',
-          icon: <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />,
+          bg: 'bg-[#DCFCE7] text-[#14532D] border-[#4ADE80]',
+          icon: <CheckCircle2 className="w-3 h-3 text-[#16A34A] shrink-0" />,
         };
       case 'درجة ائتمانية':
       case 'Credit Score':
         return {
-          bg: 'bg-indigo-50 text-indigo-700 border-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800/60',
-          icon: <Sparkles className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />,
+          bg: 'bg-[#F3E8FF] text-[#581C87] border-[#C084FC]',
+          icon: <Sparkles className="w-3 h-3 text-[#9333EA] shrink-0" />,
         };
       case 'تقييم المستندات':
       case 'Document Evaluation':
         return {
-          bg: 'bg-amber-50 text-amber-800 border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60',
-          icon: <FileText className="w-3 h-3 text-amber-600 dark:text-amber-400" />,
+          bg: 'bg-[#FEF3C7] text-[#78350F] border-[#FBBF24]',
+          icon: <FileText className="w-3 h-3 text-[#D97706] shrink-0" />,
         };
       case 'استخراج البيانات':
       case 'Data Extraction':
       default:
         return {
-          bg: 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60',
-          icon: <Clock className="w-3 h-3 text-blue-600 dark:text-blue-400" />,
+          bg: 'bg-[#E0F2FE] text-[#075985] border-[#38BDF8]',
+          icon: <Clock className="w-3 h-3 text-[#0284C7] shrink-0" />,
         };
     }
   };
@@ -280,15 +280,15 @@ export default function CaseManagementPage() {
                             <span>{language === 'ar' ? c.stageTag : c.stageTagEn}</span>
                           </span>
 
-                          {/* Quick Column Move Actions (Always Visible, Clear & Styled) */}
+                          {/* Quick Column Move Actions (Solid & Completely Opaque) */}
                           <div className="flex items-center gap-1.5">
                             {col.id !== 'processing' && (
                               <button
                                 onClick={() => moveCase(c.id, 'processing')}
                                 title={language === 'ar' ? 'إعادة إلى قيد المعالجة' : 'Move to Under Processing'}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/50 hover:bg-blue-100 hover:border-blue-300 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#0284C7] text-white hover:bg-[#0369A1] transition-all cursor-pointer active:scale-95 shadow-xs"
                               >
-                                <Clock className="w-3 h-3 text-blue-600" />
+                                <Clock className="w-3 h-3 text-white" />
                                 <span>{col.id === 'completed' ? t('cases.reopenAction') : t('cases.processAction')}</span>
                               </button>
                             )}
@@ -296,9 +296,9 @@ export default function CaseManagementPage() {
                               <button
                                 onClick={() => moveCase(c.id, 'human_review')}
                                 title={language === 'ar' ? 'نقل للمراجعة البشرية' : 'Move to Human Review'}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50 hover:bg-amber-100 hover:border-amber-300 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#D97706] text-white hover:bg-[#B45309] transition-all cursor-pointer active:scale-95 shadow-xs"
                               >
-                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                <AlertTriangle className="w-3 h-3 text-white" />
                                 <span>{t('cases.reviewAction')}</span>
                               </button>
                             )}
@@ -306,9 +306,9 @@ export default function CaseManagementPage() {
                               <button
                                 onClick={() => moveCase(c.id, 'completed')}
                                 title={language === 'ar' ? 'اعتماد ونقل إلى مكتملة' : 'Approve & Complete'}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/50 hover:bg-emerald-100 hover:border-emerald-300 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#16A34A] text-white hover:bg-[#15803D] transition-all cursor-pointer active:scale-95 shadow-xs"
                               >
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <CheckCircle2 className="w-3 h-3 text-white" />
                                 <span>{t('cases.approveAction')}</span>
                               </button>
                             )}

@@ -272,7 +272,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   {userName}
                 </p>
                 <p className="text-[11px] text-text-muted mt-0.5 font-mono truncate">
-                  {user?.email || 'mohamed.sami@credix.bank.eg'}
+                  {user?.email || 'mohamed.sami@credix.demo'}
                 </p>
                 <div className="mt-2">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E8EEF5] text-brand-navy border border-border">

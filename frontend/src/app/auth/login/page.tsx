@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -28,6 +28,44 @@ import { SignInError } from '@/lib/auth/signin';
 import { AuthApiError } from '@/lib/auth/api';
 import { isDemoMode } from '@/lib/config';
 
+const DEMO_CREDENTIALS: Record<UserRole, {
+  email: string;
+  password: string;
+  name: string;
+  nameEn: string;
+  roleLabel: string;
+  roleLabelEn: string;
+  subtitle: string;
+  subtitleEn: string;
+  initials: string;
+  target: string;
+}> = {
+  client: {
+    email: 'ahmed.fouad@credix.demo',
+    password: 'Demo@1234',
+    name: 'أحمد فؤاد عبد الله',
+    nameEn: 'Ahmed Fouad Abdallah',
+    roleLabel: 'مقدم طلب تمويل',
+    roleLabelEn: 'Financing Applicant',
+    subtitle: 'بوابة العميل • تمويل المشروعات',
+    subtitleEn: 'Client Portal • SME Financing',
+    initials: 'AF',
+    target: '/portal',
+  },
+  officer: {
+    email: 'mohamed.sami@credix.demo',
+    password: 'Demo@1234',
+    name: 'محمد سامي',
+    nameEn: 'Mohamed Sami',
+    roleLabel: 'كبير مسؤولي الائتمان',
+    roleLabelEn: 'Senior Credit Officer',
+    subtitle: 'لوحة تحكم الائتمان • قرارات التمويل',
+    subtitleEn: 'Credit Dashboard • Risk Decisioning',
+    initials: 'MS',
+    target: '/dashboard',
+  },
+};
+
 function AuthContent() {
   const { t, language, toggleLanguage, direction } = useLanguage();
   const { signIn } = useAuth();
@@ -47,10 +85,18 @@ function AuthContent() {
 
   // Form states
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => (
+    isDemoMode && initialMode === 'signin'
+      ? DEMO_CREDENTIALS[initialRole].email
+      : ''
+  ));
   const [nationalId, setNationalId] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(() => (
+    isDemoMode && initialMode === 'signin'
+      ? DEMO_CREDENTIALS[initialRole].password
+      : ''
+  ));
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -58,11 +104,32 @@ function AuthContent() {
   const [pendingVerification, setPendingVerification] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
 
-  const handleRoleChange = (role: UserRole) => {
+  const handleRoleChange = useCallback((role: UserRole) => {
     setSelectedRole(role);
     setFormError('');
     setSuccessMessage('');
     setNeedsVerification(false);
+    if (isDemoMode && authMode === 'signin') {
+      setEmail(DEMO_CREDENTIALS[role].email);
+      setPassword(DEMO_CREDENTIALS[role].password);
+    }
+  }, [authMode]);
+
+  const handleModeChange = (mode: 'signin' | 'signup') => {
+    setAuthMode(mode);
+    setSuccessMessage('');
+    setFormError('');
+    setPendingVerification(false);
+    setNeedsVerification(false);
+    if (isDemoMode) {
+      if (mode === 'signin') {
+        setEmail(DEMO_CREDENTIALS[selectedRole].email);
+        setPassword(DEMO_CREDENTIALS[selectedRole].password);
+      } else {
+        setEmail('');
+        setPassword('');
+      }
+    }
   };
 
   useEffect(() => {
@@ -70,7 +137,7 @@ function AuthContent() {
     if (roleParam === 'client' || roleParam === 'officer') {
       handleRoleChange(roleParam as UserRole);
     }
-  }, [searchParams]);
+  }, [searchParams, handleRoleChange]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,8 +205,10 @@ function AuthContent() {
       const redirectParam = searchParams.get('redirect');
       const target = actualRole === 'client'
         ? redirectParam === '/apply' || redirectParam === '/portal' ? redirectParam : '/portal'
-        : redirectParam?.startsWith('/dashboard') ? redirectParam : '/dashboard';
-      window.setTimeout(() => router.push(target), 450);
+        : redirectParam && !redirectParam.startsWith('/portal') && !redirectParam.startsWith('/apply')
+          ? redirectParam
+          : '/dashboard';
+      window.setTimeout(() => router.push(target), 300);
     } catch (error) {
       if (error instanceof SignInError) {
         setFormError(error.message);
@@ -199,13 +268,7 @@ function AuthContent() {
           <div className="grid grid-cols-2 gap-1.5 bg-surface-subtle p-1 rounded-2xl border border-border">
             <button
               type="button"
-              onClick={() => {
-                setAuthMode('signin');
-                setSuccessMessage('');
-                setFormError('');
-                setPendingVerification(false);
-                setNeedsVerification(false);
-              }}
+              onClick={() => handleModeChange('signin')}
               className={`py-2 rounded-xl text-xs font-bold transition-all ${
                 authMode === 'signin'
                   ? 'bg-surface text-text-primary shadow-xs'
@@ -216,13 +279,7 @@ function AuthContent() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setAuthMode('signup');
-                setSuccessMessage('');
-                setFormError('');
-                setPendingVerification(false);
-                setNeedsVerification(false);
-              }}
+              onClick={() => handleModeChange('signup')}
               className={`py-2 rounded-xl text-xs font-bold transition-all ${
                 authMode === 'signup'
                   ? 'bg-surface text-text-primary shadow-xs'
@@ -265,6 +322,35 @@ function AuthContent() {
               </button>
             </div>
           </div>
+
+          {/* Subtle Demo Identity Indicator */}
+          {isDemoMode && authMode === 'signin' && (
+            <div className="p-3 rounded-2xl bg-surface-subtle border border-border flex items-center justify-between gap-3 text-start">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-brand-navy text-white flex items-center justify-center text-xs font-bold shrink-0">
+                  {DEMO_CREDENTIALS[selectedRole].initials}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-text-primary">
+                      {language === 'ar'
+                        ? DEMO_CREDENTIALS[selectedRole].name
+                        : DEMO_CREDENTIALS[selectedRole].nameEn}
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-md bg-surface text-[10px] font-bold text-brand-navy border border-border shrink-0">
+                      {t('auth.demoAccount')}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary truncate">
+                    {language === 'ar'
+                      ? DEMO_CREDENTIALS[selectedRole].subtitle
+                      : DEMO_CREDENTIALS[selectedRole].subtitleEn}
+                  </p>
+                </div>
+              </div>
+              <Sparkles className="w-4 h-4 text-brand-navy shrink-0 opacity-70" />
+            </div>
+          )}
 
           {/* Success Message Banner */}
           {successMessage && (
@@ -324,6 +410,8 @@ function AuthContent() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              readOnly={isDemoMode && authMode === 'signin'}
+              helperText={isDemoMode && authMode === 'signin' ? t('auth.demoCredentialsPrefilled') : undefined}
               required
             />
 
@@ -333,6 +421,7 @@ function AuthContent() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              readOnly={isDemoMode && authMode === 'signin'}
               required
             />
 
