@@ -1,0 +1,31 @@
+"""User Pydantic Schemas."""
+
+from typing import Optional
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+class UserBase(BaseModel):
+    name: str
+    name_en: str = Field(..., alias="nameEn")
+    email: str
+    role: str = "officer"  # 'client' | 'officer'
+    avatar: Optional[str] = None
+    title: Optional[str] = None
+    title_en: Optional[str] = Field(None, alias="titleEn")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class UserCreate(UserBase):
+    id: Optional[str] = None
+
+
+class UserResponse(UserBase):
+    id: str
+
+
+class LoginRequest(BaseModel):
+    role: Optional[str] = "officer"
+    email: Optional[str] = None
+    password: Optional[str] = None
+

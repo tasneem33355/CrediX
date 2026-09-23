@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: credix
+      POSTGRES_USER: credix
+      POSTGRES_PASSWORD: credix
+    ports:
+      - "5432:5432"
+    volumes:
+      - credix_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  credix_postgres_data:
