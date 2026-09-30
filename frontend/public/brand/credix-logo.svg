@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 580" role="img" aria-labelledby="title desc">
+  <title id="title">CrediX</title>
+  <desc id="desc">CrediX Credit Intelligence institutional logo</desc>
+  <g id="logo-base" fill="#061d33">
+    <path d="M270 285h260v18H270zM258 306h284v16H258zM246 327h308v19H246z"/>
+  </g>
+  <g id="logo-columns" fill="#061d33">
+    <path d="M286 203h28v14h-4v70h-20v-70h-4zM326 203h28v14h-4v70h-20v-70h-4zM446 203h28v14h-4v70h-20v-70h-4zM486 203h28v14h-4v70h-20v-70h-4z"/>
+  </g>
+  <g id="logo-door" fill="#061d33"><path d="M379 285v-53c0-16 10-27 21-27s21 11 21 27v53z"/></g>
+  <g id="logo-beam" fill="#061d33"><path d="M256 170h288v27H256zM278 198h244v12H278z"/></g>
+  <g id="logo-roof" fill="none" stroke="#061d33" stroke-linejoin="miter" stroke-width="12"><path d="M280 161v-16l120-58 120 58v16z"/></g>
+  <g id="logo-wordmark" fill="#061d33">
+    <text x="400" y="469" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="167" font-weight="700" letter-spacing="-10">CrediX</text>
+  </g>
+  <g id="logo-tagline" fill="#315b72">
+    <text x="400" y="516" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" letter-spacing="11">CREDIT INTELLIGENCE</text>
+  </g>
+</svg>
