@@ -388,7 +388,7 @@ def test_cases_kanban_crud(as_officer):
     assert patch_res.json()["columnId"] == "human_review"
 
 
-def test_ai_assistant_chat(as_officer):
+def test_ai_assistant_chat(as_officer, monkeypatch):
     sessions = client.get("/api/v1/ai-assistant/sessions", headers=as_officer)
     assert sessions.status_code == 200
     assert len(sessions.json()) >= 3
@@ -398,18 +398,34 @@ def test_ai_assistant_chat(as_officer):
     assert messages.status_code == 200
     assert len(messages.json()) >= 3
 
-    # Send prompt
+    # The assistant answers from the LLM Explainer (mocked here).
+    import app.api.v1.chat as chat_module
+
+    async def fake_ask(blocks, question, lang="ar", history=None, timeout_sec=45.0):
+        return {"answer": "رد تجريبي", "language": lang}
+
+    monkeypatch.setattr(chat_module, "ask_explainer", fake_ask)
+    app_id = client.get("/api/v1/applications?limit=1", headers=as_officer).json()[0]["id"]
+
     send_res = client.post(
         f"/api/v1/ai-assistant/sessions/{sess_id}/messages",
-        json={"text": "هل توجد متناقضات في كشف الحساب؟"},
+        json={"text": "هل توجد متناقضات في كشف الحساب؟", "applicationId": app_id, "lang": "ar"},
         headers=as_officer,
     )
     assert send_res.status_code == 200
     history = send_res.json()
-    assert len(history) == 2  # [user_msg, bot_msg]
+    assert len(history) == 2
     assert history[0]["sender"] == "user"
     assert history[1]["sender"] == "assistant"
-    assert len(history[1]["citations"]) > 0
+    assert history[1]["text"] == "رد تجريبي"
+
+    # Without an application there is nothing to explain.
+    missing = client.post(
+        f"/api/v1/ai-assistant/sessions/{sess_id}/messages",
+        json={"text": "سؤال"},
+        headers=as_officer,
+    )
+    assert missing.status_code == 422
 
 
 def test_dashboard_analytics(as_officer):
