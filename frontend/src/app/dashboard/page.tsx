@@ -644,7 +644,6 @@ export default function DashboardPage() {
                       ) : (
                         <span className="text-xs text-text-muted">—</span>
                       )}
-                      </span>
                     </td>
 
                     {/* Status */}
