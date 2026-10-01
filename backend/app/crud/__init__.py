@@ -17,7 +17,7 @@ from app.crud.crud_chat import (
     create_chat_session,
     delete_chat_session,
     get_session_messages,
-    add_chat_message_and_respond,
+    save_chat_exchange,
 )
 
 __all__ = [
@@ -45,6 +45,6 @@ __all__ = [
     "create_chat_session",
     "delete_chat_session",
     "get_session_messages",
-    "add_chat_message_and_respond",
+    "save_chat_exchange",
 ]
 
