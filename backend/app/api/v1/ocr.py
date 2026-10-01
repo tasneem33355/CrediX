@@ -18,6 +18,11 @@ from app.services.service_errors import ExternalServiceError
 
 router = APIRouter(prefix="/ocr", tags=["OCR & Scoring Pipeline"])
 
+async def _ingest_or_422(**kwargs):
+    try:
+        return await ingest_ocr_and_create_application(**kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
 @router.post("/ingest-json", response_model=OCRIngestResponse, status_code=status.HTTP_201_CREATED)
 async def ingest_ocr_json_endpoint(
@@ -30,7 +35,7 @@ async def ingest_ocr_json_endpoint(
     Validates National ID, Name, Freshness, and Income Discrepancy.
     Persists into extraction_results and initializes a loan application.
     """
-    result = await ingest_ocr_and_create_application(
+    result = await _ingest_or_422(
         db=db,
         ocr_payload=req.ocr_data,
         actor=current_user,
@@ -75,7 +80,7 @@ async def upload_documents_and_process(
             detail=f"OCR service communication failed: {str(exc)}",
         )
 
-    result = await ingest_ocr_and_create_application(
+    result = await _ingest_or_422(
         db=db,
         ocr_payload=ocr_data,
         actor=current_user,
