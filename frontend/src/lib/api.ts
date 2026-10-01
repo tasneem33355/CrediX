@@ -169,3 +169,138 @@ export async function runPortfolioStressTest(
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// OCR ingestion & documents
+// ---------------------------------------------------------------------------
+
+export interface OcrWarning {
+  code?: string;
+  severity?: string;
+  field?: string;
+  message?: string;
+  message_en?: string;
+}
+
+export interface OcrIngestResult {
+  application_id: string;
+  is_consistent: boolean;
+  applicant_name: string;
+  national_id: string;
+  status: string;
+  warnings: OcrWarning[];
+  extraction_id: string;
+}
+
+export interface LoanOptions {
+  loanType?: string;
+  requestedAmount?: number;
+  tenureMonths?: number;
+  purpose?: string;
+}
+
+export interface OcrUploadFiles {
+  nationalIdFront: File;
+  nationalIdBack: File;
+  salaryCertificate: File;
+  bankStatement: File;
+  iscore: File;
+}
+
+export interface ApiDocument {
+  id: string;
+  applicationId?: string | null;
+  code: string;
+  name: string;
+  nameEn: string;
+  size: string;
+  uploadDate: string;
+  status: string; // 'success' | 'processing' | 'failed'
+  statusLabel: string;
+  statusLabelEn: string;
+  fileUrl?: string | null;
+  uploadedAt?: string | null;
+  extractedData?: {
+    document_type?: string;
+    overall_quality_score?: number | null;
+    is_tampered_suspected?: boolean;
+  } & Record<string, unknown>;
+}
+
+async function readApiError(res: Response, fallback: string): Promise<string> {
+  const err = await res.json().catch(() => ({}));
+  return typeof err?.detail === 'string' ? err.detail : fallback;
+}
+
+/** Ingest an OCR JSON payload (e.g. response_Fixed.json) and create an application. */
+export async function ingestOcrJson(
+  ocrData: Record<string, unknown>,
+  options: LoanOptions = {},
+  token?: string
+): Promise<OcrIngestResult> {
+  const res = await fetch(`${API_BASE}/ocr/ingest-json`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify({
+      ocr_data: ocrData,
+      loan_type: options.loanType,
+      requested_amount: options.requestedAmount,
+      tenure_months: options.tenureMonths,
+      purpose: options.purpose,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Ingest failed (${res.status})`));
+  }
+  return res.json();
+}
+
+/** Upload the 5 credit documents, run OCR + validation and create an application. */
+export async function uploadAndProcessDocuments(
+  files: OcrUploadFiles,
+  options: LoanOptions = {},
+  token?: string
+): Promise<OcrIngestResult> {
+  const form = new FormData();
+  form.append('national_id_front_file', files.nationalIdFront);
+  form.append('national_id_back_file', files.nationalIdBack);
+  form.append('salary_certificate_file', files.salaryCertificate);
+  form.append('bank_statement_file', files.bankStatement);
+  form.append('iscore_file', files.iscore);
+  if (options.loanType) form.append('loan_type', options.loanType);
+  if (options.requestedAmount !== undefined) form.append('requested_amount', String(options.requestedAmount));
+  if (options.tenureMonths !== undefined) form.append('tenure_months', String(options.tenureMonths));
+  if (options.purpose) form.append('purpose', options.purpose);
+
+  // No Content-Type header here: the browser must set the multipart boundary itself.
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/ocr/upload-and-process`, {
+    method: 'POST',
+    headers,
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Upload failed (${res.status})`));
+  }
+  return res.json();
+}
+
+export async function fetchDocuments(
+  params: { applicationId?: string; skip?: number; limit?: number } = {},
+  token?: string
+): Promise<ApiDocument[]> {
+  const query = new URLSearchParams();
+  if (params.applicationId) query.set('applicationId', params.applicationId);
+  if (params.skip !== undefined) query.set('skip', String(params.skip));
+  if (params.limit !== undefined) query.set('limit', String(params.limit));
+
+  const res = await fetch(`${API_BASE}/documents?${query.toString()}`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load documents (Status ${res.status})`);
+  }
+  return res.json();
+}
