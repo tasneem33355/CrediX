@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     PORTFOLIO_ANALYTICS_SERVICE_URL: str = "https://portfolio-analytics-service-production.up.railway.app"
     FRAUD_SERVICE_URL: str = "https://fraud-detection-service-v1-production.up.railway.app"
 
+    # Indicative pricing, used only to estimate the monthly annuity sent to scoring.
+    # Base = CBE overnight lending rate (20% at the 24 Sep 2026 MPC meeting).
+    BASE_INTEREST_RATE_PCT: float = 20.0
+    LOAN_MARGIN_PCT: float = 4.0
+    
     @property
     def is_production(self) -> bool:
         return self.APP_ENV.lower() in {"production", "prod"}
