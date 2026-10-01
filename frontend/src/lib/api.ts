@@ -38,6 +38,30 @@ export async function fetchApplicationsList(params: {
   return res.json() as Promise<unknown[]>;
 }
 
+export async function createApplication(
+  data: {
+    applicantName: string;
+    nationalId: string;
+    mobileNumber: string;
+    loanType: string;
+    requestedAmount: number;
+    tenureMonths: number;
+    purpose?: string;
+  },
+  token?: string
+) {
+  const res = await fetch(`${API_BASE}/applications`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to submit application (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function fetchApplicationById(appId: string, token?: string) {
   const res = await fetch(`${API_BASE}/applications/${appId}`, {
     headers: getHeaders(token),
