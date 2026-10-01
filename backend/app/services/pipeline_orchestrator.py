@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 
 from app.database import new_id
-from app.models.application import LoanApplication, ExtractionResult, ModelRun, TimelineEvent
+from app.models.application import Document, LoanApplication, ExtractionResult, ModelRun, TimelineEvent
 from app.models.user import User
 from app.services.ocr_validator import run_full_ocr_validation
 from app.services.fraud_client import score_fraud
@@ -163,6 +163,41 @@ async def ingest_ocr_and_create_application(
     )
     db.add(extraction)
 
+
+    # 4b. Register one Document row per OCR-processed document so /documents and
+    #     the application's documents tab are backed by real rows.
+    doc_labels = {
+        "national_id": ("ID", "بطاقة الرقم القومي", "National ID"),
+        "salary_certificate": ("SC", "شهادة الراتب", "Salary Certificate"),
+        "bank_statement": ("BS", "كشف الحساب البنكي", "Bank Statement"),
+        "iscore": ("IS", "تقرير الآي سكور", "I-Score Report"),
+        "iscore_report": ("IS", "تقرير الآي سكور", "I-Score Report"),
+    }
+    for doc in ocr_payload.get("documents") or []:
+        dtype = str(doc.get("document_type") or "document")
+        code, name_ar, name_en = doc_labels.get(dtype, ("DOC", dtype, dtype))
+        quality = doc.get("overall_quality_score")
+        tampered = bool(doc.get("is_tampered_suspected"))
+        ok = not tampered and (quality is None or quality >= 0.6)
+        db.add(
+            Document(
+                id=new_id("doc"),
+                application_id=app.id,
+                code=code,
+                name=name_ar,
+                name_en=name_en,
+                size="—",
+                status="success" if ok else "failed",
+                status_label="تم الاستخراج" if ok else "يحتاج مراجعة",
+                status_label_en="Extracted" if ok else "Needs review",
+                extracted_data={
+                    "document_type": dtype,
+                    "overall_quality_score": quality,
+                    "is_tampered_suspected": tampered,
+                },
+            )
+        )
+    
     # 5. Add Timeline Event
     timeline = TimelineEvent(
         id=new_id("tl"),
