@@ -248,10 +248,11 @@ async def run_scoring_pipeline_for_application(
 
     # Extract validation summary
     validation_summary = run_full_ocr_validation(ocr_payload) if ocr_payload else {"warnings": []}
-
+    scoring_payload = build_scoring_payload(ocr_payload, app)
+    
     # 1. Step 1: Fraud Scoring
     t0 = time.time()
-    fraud_res = await score_fraud(ocr_payload)
+    fraud_res = await score_fraud(scoring_payload)
     latency_fraud = int((time.time() - t0) * 1000)
 
     run_fraud = ModelRun(
@@ -261,7 +262,7 @@ async def run_scoring_pipeline_for_application(
         model_name="credix-fraud-detector-v1",
         model_version="1.0.0",
         status="success",
-        input_sha256=_sha256(ocr_payload),
+        input_sha256=_sha256(scoring_payload),
         output=fraud_res,
         latency_ms=latency_fraud,
         requested_by=actor.id if actor else None,
@@ -272,7 +273,7 @@ async def run_scoring_pipeline_for_application(
 
     # 2. Step 2: Credit Risk ML Scoring
     t0 = time.time()
-    credit_res = await score_credit_risk(ocr_payload)
+    credit_res = await score_credit_risk(scoring_payload)
     latency_credit = int((time.time() - t0) * 1000)
 
     run_credit = ModelRun(
@@ -282,7 +283,7 @@ async def run_scoring_pipeline_for_application(
         model_name="credit-risk-xgb-lgb-blend-v1",
         model_version="1.0.0",
         status="success" if not credit_res.get("error") else "failed",
-        input_sha256=_sha256(ocr_payload),
+        input_sha256=_sha256(scoring_payload),
         output=credit_res,
         latency_ms=latency_credit,
         requested_by=actor.id if actor else None,
