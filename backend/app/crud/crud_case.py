@@ -63,3 +63,38 @@ def delete_case(db: Session, case_id: str) -> bool:
     db.commit()
     return True
 
+def sync_case_card(
+    db: Session,
+    application,
+    column_id: str,
+    stage_tag: str,
+    stage_tag_en: str,
+) -> Optional[CaseCard]:
+    """Create or update the Kanban card that mirrors a real application.
+
+    Does not commit: the caller commits together with its own changes.
+    """
+    # case_cards.amount has a positive-amount constraint; never let a card break a decision.
+    if not application.requested_amount or application.requested_amount <= 0:
+        return None
+    card = db.query(CaseCard).filter(CaseCard.application_id == application.id).first()
+    if card is None:
+        name = application.applicant_name or "عميل"
+        card = CaseCard(
+            id=new_id("case"),
+            application_id=application.id,
+            client_name=name,
+            client_name_en=application.applicant_name_en or name,
+            initials=name.strip()[:1] or "ع",
+            amount=application.requested_amount,
+            currency="ج.م",
+            stage_tag=stage_tag,
+            stage_tag_en=stage_tag_en,
+            column_id=column_id,
+        )
+        db.add(card)
+    else:
+        card.stage_tag = stage_tag
+        card.stage_tag_en = stage_tag_en
+        card.column_id = column_id
+    return card
