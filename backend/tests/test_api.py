@@ -421,11 +421,11 @@ def test_dashboard_analytics(as_officer):
 
     trends = client.get("/api/v1/dashboard/trends", headers=as_officer)
     assert trends.status_code == 200
-    assert len(trends.json()) == 7
+    assert len(trends.json()) == 30
 
     donut = client.get("/api/v1/dashboard/status-distribution", headers=as_officer)
     assert donut.status_code == 200
-    assert len(donut.json()) == 3
+    assert len(donut.json()) == 4
 
     loan_types = client.get("/api/v1/dashboard/loan-types", headers=as_officer)
     assert loan_types.status_code == 200
