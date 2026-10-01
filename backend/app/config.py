@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Base = CBE overnight lending rate (20% at the 24 Sep 2026 MPC meeting).
     BASE_INTEREST_RATE_PCT: float = 20.0
     LOAN_MARGIN_PCT: float = 4.0
+
+    # Portfolio stress-test assumptions (adjustable without code changes).
+    STRESS_BASE_LGD: float = 0.45  # Basel foundation-IRB senior unsecured LGD
+    STRESS_PD_SENSITIVITY_PER_100BPS: float = 0.05  # relative PD increase per +100 bps
     
     @property
     def is_production(self) -> bool:
