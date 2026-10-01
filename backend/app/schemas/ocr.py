@@ -11,7 +11,7 @@ class OCRSubmissionRequest(BaseModel):
     requested_amount: Optional[float] = Field(100000.0, gt=0, description="Requested financing amount in EGP")
     tenure_months: Optional[int] = Field(36, ge=1, le=480, description="Tenure in months")
     purpose: Optional[str] = Field(None, description="Financing purpose")
-
+    mobile_number: Optional[str] = Field(None, description="Applicant mobile (11-digit Egyptian)")
 
 class OCRIngestResponse(BaseModel):
     """Response returned upon ingesting and validating OCR data."""
