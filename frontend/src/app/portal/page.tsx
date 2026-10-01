@@ -305,7 +305,7 @@ export default function ClientPortalPage() {
               </div>
 
               <div className="space-y-2.5 text-xs">
-                {myApp.documents.map((doc) => (
+                {(myApp.documents || []).map((doc: any) => (
                   <div
                     key={doc.id}
                     className="flex items-center justify-between p-3 rounded-xl bg-surface-subtle border border-border"
