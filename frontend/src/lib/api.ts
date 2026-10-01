@@ -197,6 +197,7 @@ export interface LoanOptions {
   requestedAmount?: number;
   tenureMonths?: number;
   purpose?: string;
+  mobileNumber?: string;
 }
 
 export interface OcrUploadFiles {
@@ -247,6 +248,7 @@ export async function ingestOcrJson(
       requested_amount: options.requestedAmount,
       tenure_months: options.tenureMonths,
       purpose: options.purpose,
+      mobile_number: options.mobileNumber,
     }),
   });
   if (!res.ok) {
@@ -271,7 +273,8 @@ export async function uploadAndProcessDocuments(
   if (options.requestedAmount !== undefined) form.append('requested_amount', String(options.requestedAmount));
   if (options.tenureMonths !== undefined) form.append('tenure_months', String(options.tenureMonths));
   if (options.purpose) form.append('purpose', options.purpose);
-
+  if (options.mobileNumber) form.append('mobile_number', options.mobileNumber);
+  
   // No Content-Type header here: the browser must set the multipart boundary itself.
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
