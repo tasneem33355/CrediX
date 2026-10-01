@@ -189,7 +189,7 @@ export default function ApplicationDetailPage() {
   const declaredSalary = Number(bankSummary.declared_net_salary) || 22880.0;
   const verifiedBankInflow = Number(bankSummary.monthly_average) || 2998.5;
   const requestedLoan = Number(application.requestedAmount) || 100000;
-  const tenureMonths = Number(application.tenureMonths) || 36;
+  const tenureMonths = Number((application as any).tenureMonths || (application as any).tenure_months) || 36;
   const baseMonthlyInstallment = Math.round((requestedLoan / tenureMonths) * 1.18);
   const dbrDeclared = declaredSalary > 0 ? ((baseMonthlyInstallment / declaredSalary) * 100).toFixed(1) : '—';
   const dbrVerified = verifiedBankInflow > 0 ? ((baseMonthlyInstallment / verifiedBankInflow) * 100).toFixed(1) : '—';
