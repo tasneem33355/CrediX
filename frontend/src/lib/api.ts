@@ -281,6 +281,54 @@ export async function ingestOcrJson(
   return res.json();
 }
 
+export interface GateIssue {
+  document: string;
+  document_label: string;
+  document_label_en: string;
+  field?: string | null;
+  severity: string;
+  code?: string;
+  message?: string;
+  message_en?: string;
+  action: 'reupload' | 'acknowledge';
+}
+
+export interface GateResult {
+  status: 'passed' | 'needs_acknowledgement' | 'needs_reupload' | 'blocked';
+  can_proceed: boolean;
+  requires_acknowledgement: boolean;
+  is_tampered_suspected: boolean;
+  issues: GateIssue[];
+  reupload_documents: string[];
+  ocr_data: Record<string, unknown>;
+}
+
+/** Run OCR + the validation gate on the 5 documents WITHOUT creating an application. */
+export async function uploadAndCheckDocuments(
+  files: OcrUploadFiles,
+  token?: string
+): Promise<GateResult> {
+  const form = new FormData();
+  form.append('national_id_front_file', files.nationalIdFront);
+  form.append('national_id_back_file', files.nationalIdBack);
+  form.append('salary_certificate_file', files.salaryCertificate);
+  form.append('bank_statement_file', files.bankStatement);
+  form.append('iscore_file', files.iscore);
+
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/ocr/upload-and-check`, {
+    method: 'POST',
+    headers,
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Document check failed (${res.status})`));
+  }
+  return res.json();
+}
+
 /** Upload the 5 credit documents, run OCR + validation and create an application. */
 export async function uploadAndProcessDocuments(
   files: OcrUploadFiles,
