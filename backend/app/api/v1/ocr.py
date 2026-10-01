@@ -8,12 +8,13 @@ from app.auth.dependencies import require_authenticated_user, require_officer
 from app.database import get_db
 from app.models.user import User
 from app.models.application import ExtractionResult, LoanApplication
-from app.schemas.ocr import OCRSubmissionRequest, OCRIngestResponse, FullPipelineScoreResponse
+from app.schemas.ocr import OCRSubmissionRequest, OCRIngestResponse, OCRGateResponse, FullPipelineScoreResponse
 from app.services.pipeline_orchestrator import (
     ingest_ocr_and_create_application,
     run_scoring_pipeline_for_application,
 )
 from app.services.ocr_client import call_ocr_service
+from app.services.ocr_gate import evaluate_gate
 from app.services.service_errors import ExternalServiceError
 
 router = APIRouter(prefix="/ocr", tags=["OCR & Scoring Pipeline"])
@@ -47,6 +48,33 @@ async def ingest_ocr_json_endpoint(
     )
     return result
 
+@router.post("/upload-and-check", response_model=OCRGateResponse)
+async def upload_documents_and_check(
+    national_id_front_file: UploadFile = File(...),
+    national_id_back_file: UploadFile = File(...),
+    salary_certificate_file: UploadFile = File(...),
+    bank_statement_file: UploadFile = File(...),
+    iscore_file: UploadFile = File(...),
+    current_user: User = Depends(require_authenticated_user),
+):
+    """Run OCR + the validation gate WITHOUT creating an application."""
+    files_payload = {
+        "national_id_front_file": (national_id_front_file.filename, await national_id_front_file.read(), national_id_front_file.content_type),
+        "national_id_back_file": (national_id_back_file.filename, await national_id_back_file.read(), national_id_back_file.content_type),
+        "salary_certificate_file": (salary_certificate_file.filename, await salary_certificate_file.read(), salary_certificate_file.content_type),
+        "bank_statement_file": (bank_statement_file.filename, await bank_statement_file.read(), bank_statement_file.content_type),
+        "iscore_file": (iscore_file.filename, await iscore_file.read(), iscore_file.content_type),
+    }
+
+    try:
+        ocr_data = await call_ocr_service(files_payload, application_id="pending")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"OCR service communication failed: {str(exc)}",
+        )
+
+    return {**evaluate_gate(ocr_data), "ocr_data": ocr_data}
 
 @router.post("/upload-and-process", response_model=OCRIngestResponse, status_code=status.HTTP_201_CREATED)
 async def upload_documents_and_process(
