@@ -1,7 +1,4 @@
-"""CRUD operations for AI Assistant Chat Sessions and Messages.
-
-The generated assistant response is DEMO ONLY, not a real RAG/LLM result.
-"""
+"""CRUD operations for AI Assistant Chat Sessions and Messages."""
 
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
@@ -51,15 +48,15 @@ def get_session_messages(db: Session, session_id: str) -> List[ChatMessage]:
     return db.query(ChatMessage).filter(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at.asc()).all()
 
 
-def add_chat_message_and_respond(
+def save_chat_exchange(
     db: Session,
     session_id: str,
     message_in: ChatMessageCreate,
+    answer: str,
 ) -> Tuple[ChatMessage, ChatMessage]:
-    """Adds user message and generates a realistic placeholder AI response with citations."""
-    user_msg_id = new_id("msg")
+    """Persist the officer's question and the assistant's answer (called after the LLM replied)."""
     user_msg = ChatMessage(
-        id=user_msg_id,
+        id=new_id("msg"),
         session_id=session_id,
         sender="user",
         text=message_in.text,
@@ -69,50 +66,18 @@ def add_chat_message_and_respond(
     )
     db.add(user_msg)
 
-    # Generate placeholder AI Assistant response
-    q = message_in.text.lower()
-    if "متناقض" in q or "discrepanc" in q or "احتيال" in q or "fraud" in q:
-        bot_text = "تم رصد تناقض بين شهادة الدخل (المعلن: 85,000 ج.م) وكشف الحساب البنكي الصادر من البنك الأهلي المصري (المتوسط الفعلي: 53,700 ج.م شهرياً)."
-        bot_text_en = "Discrepancy identified between declared income (85,000 EGP) and actual bank statement deposits (53,700 EGP/month)."
-        citations = [
-            {"documentName": "كشف حساب بنكي - صفحة 3", "documentNameEn": "Bank Statement - Page 3", "page": 3, "quote": "متوسط التدفق الشهري الدائن: 53,700 ج.م"},
-            {"documentName": "شهادة الدخل", "documentNameEn": "Income Certificate", "page": 1, "quote": "الدخل الصافي المعلن: 85,000 ج.م"}
-        ]
-        suggested_action = {
-            "label": "إجراء مقترح",
-            "labelEn": "Suggested Action",
-            "description": "طلب كشف حساب بنكي لـ 6 أشهر إضافية أو إقرار ضريبي موثق.",
-            "descriptionEn": "Request an additional 6-month bank statement or certified tax return."
-        }
-    elif "إيداع" in q or "deposit" in q or "رصيد" in q or "balance" in q:
-        bot_text = "إجمالي الإيداعات خلال آخر 3 شهور هو 485,200 ج.م، بمتوسط شهري قدره 161,733 ج.م ومتوسط رصيد ختامي 126,450 ج.م."
-        bot_text_en = "Total deposits over the last 3 months amount to 485,200 EGP, with a monthly average of 161,733 EGP and average balance of 126,450 EGP."
-        citations = [
-            {"documentName": "كشف الحساب البنكي", "documentNameEn": "Bank Statement", "page": 2, "quote": "إجمالي الإيداعات: 485,200 ج.م - صفحة 2"}
-        ]
-        suggested_action = None
-    else:
-        bot_text = "بناءً على وثائق الطلب المفحوصة، فإن درجة الجدارة الائتمانية تبلغ 78/100 ونسبة عبء الدين DBR تتوافق مع معايير البنك المركزي المصري."
-        bot_text_en = "Based on analyzed application documents, creditworthiness score is 78/100 and DTI complies with Central Bank of Egypt regulations."
-        citations = [
-            {"documentName": "تقرير الاستعلام الائتماني i-Score", "documentNameEn": "i-Score Credit Report", "page": 1, "quote": "السجل الائتماني منتظم وبدون تعثر"}
-        ]
-        suggested_action = None
-
-    bot_msg_id = new_id("msg")
     bot_msg = ChatMessage(
-        id=bot_msg_id,
+        id=new_id("msg"),
         session_id=session_id,
         sender="assistant",
-        text=bot_text,
-        text_en=bot_text_en,
+        text=answer,
+        text_en=answer,
         timestamp="الآن",
-        citations=citations,
-        suggested_action=suggested_action,
+        citations=[],
+        suggested_action=None,
     )
     db.add(bot_msg)
 
-    # Update session time
     db_session = get_chat_session_by_id(db, session_id)
     if db_session:
         db_session.time_ago = "الآن"
