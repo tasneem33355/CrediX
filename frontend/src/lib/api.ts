@@ -102,103 +102,70 @@ export async function fetchExtractions(appId: string, token?: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Macro Portfolio Analytics Service Calls
+// Macro Portfolio Analytics Service (direct call: read-only, CORS enabled)
+// No mock fallbacks: on any failure these return null and the page must show
+// an error / empty state instead of invented numbers.
 // ---------------------------------------------------------------------------
 
-const PORTFOLIO_ANALYTICS_BASE =
+const PORTFOLIO_ANALYTICS_BASE = (
   process.env.NEXT_PUBLIC_PORTFOLIO_ANALYTICS_URL ||
-  'https://portfolio-analytics-service-production.up.railway.app';
+  'https://portfolio-analytics-service-production.up.railway.app'
+).replace(/\/$/, '');
 
-export async function fetchPortfolioKpis() {
+async function getPortfolioData(path: string) {
   try {
-    const res = await fetch(`${PORTFOLIO_ANALYTICS_BASE}/api/v1/portfolio/kpis`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.data;
-    }
-  } catch {}
-  return {
-    total_loans_count: 500,
-    total_portfolio_volume: 48250000.0,
-    average_loan_size: 96500.0,
-    npl_ratio: 0.058,
-    performing_loans_count: 471,
-    npl_loans_count: 29,
-  };
+    const res = await fetch(`${PORTFOLIO_ANALYTICS_BASE}/api/v1/portfolio/${path}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.data ?? null;
+  } catch {
+    return null;
+  }
 }
 
-export async function fetchPortfolioConcentration() {
-  try {
-    const res = await fetch(`${PORTFOLIO_ANALYTICS_BASE}/api/v1/portfolio/concentration`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.data;
-    }
-  } catch {}
-  return {
-    by_product: { CASH_LOAN: 280, CAR_LOAN: 110, CREDIT_CARD: 45 },
-    by_status: { ACTIVE_PERFORMING: 450, CLOSED_PAID_OFF: 21, DEFAULTED_NPL: 29 },
-  };
+export function fetchPortfolioKpis() {
+  return getPortfolioData('kpis');
 }
 
-export async function fetchPortfolioDrift() {
-  try {
-    const res = await fetch(`${PORTFOLIO_ANALYTICS_BASE}/api/v1/portfolio/drift`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.data;
-    }
-  } catch {}
-  return {
-    system_health: 'HEALTHY',
-    retraining_recommended: false,
-    max_psi_feature: 'dti_ratio',
-    max_psi_score: 0.041,
-    evaluated_batch_size: 1240,
-    cbe_audit_comment: 'Feature distributions fully stable and compliant with baseline.',
-    feature_metrics: {
-      dti_ratio: { psi: 0.041, status: 'STABLE' },
-    },
-  };
+export function fetchPortfolioConcentration() {
+  return getPortfolioData('concentration');
 }
 
-export async function runPortfolioStressTest(pdMultiplier = 2.0, lgdMultiplier = 1.3) {
+export function fetchPortfolioScoredKpis() {
+  return getPortfolioData('scored-kpis');
+}
+
+export function fetchPortfolioDrift() {
+  return getPortfolioData('drift');
+}
+
+export async function runPortfolioStressTest(
+  pdMultiplier = 2.0,
+  lgdMultiplier = 1.3,
+  portfolioExposure?: number
+) {
   try {
+    let exposure = portfolioExposure;
+    if (exposure === undefined) {
+      const kpis = await fetchPortfolioKpis();
+      exposure = kpis?.total_portfolio_volume;
+    }
+    if (!exposure) return null;
+
     const res = await fetch(`${PORTFOLIO_ANALYTICS_BASE}/api/v1/portfolio/stress-test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         scenario_name: 'Macro Stress Scenario',
-        portfolio_exposure: 48250000.0,
+        portfolio_exposure: exposure,
         baseline_pd: 0.045,
         pd_multiplier: pdMultiplier,
         lgd_multiplier: lgdMultiplier,
       }),
     });
-    if (res.ok) {
-      const data = await res.json();
-      return data;
-    }
-  } catch {}
-  return {
-    scenario_results: {
-      portfolio_exposure: 48250000.0,
-      baseline_pd: 0.045,
-      stressed_pd: 0.0477 * (pdMultiplier / 2.0),
-      pd_increase_pct: 6.0 * pdMultiplier,
-      baseline_ecl: 202500.0,
-      stressed_ecl: Math.round(214650.0 * (pdMultiplier * 0.6 + lgdMultiplier * 0.4)),
-      ecl_delta: Math.round(12150.0 * pdMultiplier * lgdMultiplier),
-      capital_coverage_needed: 0.0215,
-    },
-    sensitivity_curve: [
-      { rate_hike_bps: 0, stressed_pd: 0.0464, stressed_ecl: 208575.0 },
-      { rate_hike_bps: 100, stressed_pd: 0.0466, stressed_ecl: 209790.0 },
-      { rate_hike_bps: 200, stressed_pd: 0.0469, stressed_ecl: 211005.0 },
-      { rate_hike_bps: 300, stressed_pd: 0.0472, stressed_ecl: 212220.0 },
-      { rate_hike_bps: 500, stressed_pd: 0.0477, stressed_ecl: 214650.0 },
-      { rate_hike_bps: 750, stressed_pd: 0.0484, stressed_ecl: 217687.5 },
-    ],
-  };
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
-
