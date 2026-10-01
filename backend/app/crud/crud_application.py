@@ -10,6 +10,7 @@ from app.models.application import DecisionAudit, Document, LoanApplication, Tim
 from app.models.user import User
 from app.schemas.application import LoanApplicationCreate, LoanApplicationUpdate
 from app.models.portfolio import LoanFacility
+from app.crud.crud_case import sync_case_card
 
 class DecisionConflict(Exception):
     """Raised when an application already has a final (approved/rejected) decision."""
@@ -325,6 +326,11 @@ def record_officer_decision(
     
     if new_status == "approved":
         _create_facility_for(db, db_app)
+        sync_case_card(db, db_app, "completed", "تم الاعتماد", "Approved")
+    elif new_status == "rejected":
+        sync_case_card(db, db_app, "completed", "تم الرفض", "Rejected")
+    else:
+        sync_case_card(db, db_app, "human_review", "مراجعة بشرية", "Human Review")
         
     db.commit()
     db.refresh(db_app)
