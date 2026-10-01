@@ -379,3 +379,24 @@ export async function fetchDocuments(
   }
   return res.json();
 }
+
+export interface DashboardStatsData {
+  totalApplications: number;
+  totalGrowth: number;
+  approvalRate: number;
+  approvalGrowth: number;
+  underReview: number;
+  underReviewChange: number;
+  suspiciousFraud: number;
+  suspiciousAttentionCount: number;
+}
+
+export async function fetchDashboardStats(token?: string): Promise<DashboardStatsData | null> {
+  const res = await fetch(`${API_BASE}/dashboard/stats`, { headers: getHeaders(token) });
+  return res.ok ? res.json() : null;
+}
+
+export async function fetchDashboardTrends(token?: string): Promise<{ day: string; count: number }[]> {
+  const res = await fetch(`${API_BASE}/dashboard/trends`, { headers: getHeaders(token) });
+  return res.ok ? res.json() : [];
+}
