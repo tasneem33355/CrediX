@@ -38,6 +38,7 @@ async def ingest_ocr_json_endpoint(
         requested_amount=req.requested_amount or 100000.0,
         tenure_months=req.tenure_months or 36,
         purpose=req.purpose,
+        mobile_number=req.mobile_number,
     )
     return result
 
@@ -53,6 +54,7 @@ async def upload_documents_and_process(
     requested_amount: float = Form(100000.0),
     tenure_months: int = Form(36),
     purpose: Optional[str] = Form(None),
+    mobile_number: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_authenticated_user),
 ):
@@ -81,6 +83,7 @@ async def upload_documents_and_process(
         requested_amount=requested_amount,
         tenure_months=tenure_months,
         purpose=purpose,
+        mobile_number=mobile_number,
     )
     return result
 
