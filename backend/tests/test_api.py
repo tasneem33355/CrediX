@@ -460,6 +460,7 @@ OFFICER_ONLY_ROUTES = [
     ("patch", "/api/v1/applications/APP-2026-0839"),
     ("post", "/api/v1/applications/APP-2026-0839/decision"),
     ("delete", "/api/v1/applications/APP-2026-0839"),
+    ("get", "/api/v1/applications/APP-2026-0839/audit"),
     ("delete", "/api/v1/documents/any"),
 ]
 
@@ -607,3 +608,59 @@ def test_production_settings_fail_fast():
     with pytest.raises(ValidationError):
         Settings(**{**base, "DATABASE_URL": "sqlite:///./x.db"}, SUPABASE_URL="https://x.supabase.co")
     assert Settings(**base, SUPABASE_URL="https://x.supabase.co").is_production
+
+
+# ---------------------------------------------------------------------------
+# New hardening tests
+# ---------------------------------------------------------------------------
+
+def _payload(**overrides):
+    base = {"applicantName": "عميل اختبار", "nationalId": "29901010107788",
+            "mobileNumber": "01098765432", "loanType": "personal", "requestedAmount": 100000}
+    return {**base, **overrides}
+
+
+def test_generated_ids_are_unguessable(as_officer):
+    import re
+    ids = {client.post("/api/v1/applications", json=_payload(), headers=as_officer).json()["id"] for _ in range(5)}
+    assert len(ids) == 5 and all(re.fullmatch(r"APP-\d{4}-[0-9A-F]{8}", i) for i in ids)
+
+
+@pytest.mark.parametrize("bad", [{"requestedAmount": 0}, {"tenureMonths": 999},
+                                 {"nationalId": "123"}, {"mobileNumber": "02098765432"}])
+def test_application_input_is_validated(bad, as_officer):
+    assert client.post("/api/v1/applications", json=_payload(**bad), headers=as_officer).status_code == 422
+
+
+def test_patch_cannot_change_status_or_scores(as_officer):
+    for body in ({"status": "approved"}, {"creditScore": 99}, {"fraudRiskScore": 1}):
+        assert client.patch("/api/v1/applications/APP-2026-0839", json=body, headers=as_officer).status_code == 422
+
+
+def test_decision_is_audited_final_and_keeps_ai_recommendation(as_officer):
+    created = client.post("/api/v1/applications", json=_payload(), headers=as_officer).json()
+    app_id, ai_before = created["id"], created["aiRecommendation"]
+
+    res = client.post(f"/api/v1/applications/{app_id}/decision",
+                      json={"decision": "reject", "notes": "دخل غير مثبت"}, headers=as_officer).json()
+    assert res["status"] == "rejected" and res["finalDecision"] == "reject"
+    assert res["decidedBy"] == "usr_officer_01" and res["aiRecommendation"] == ai_before
+
+    assert client.post(f"/api/v1/applications/{app_id}/decision",
+                       json={"decision": "approve"}, headers=as_officer).status_code == 409
+
+    trail = client.get(f"/api/v1/applications/{app_id}/audit", headers=as_officer).json()
+    assert [e["action"] for e in trail] == ["created", "decision"]
+    assert trail[-1]["previousStatus"] == "under_review" and trail[-1]["newStatus"] == "rejected"
+
+    assert client.delete(f"/api/v1/applications/{app_id}", headers=as_officer).status_code == 204
+    after = client.get(f"/api/v1/applications/{app_id}/audit", headers=as_officer).json()
+    assert [e["action"] for e in after] == ["created", "decision", "deleted"]
+
+
+def test_timestamps_are_utc_aware_iso(as_officer):
+    from datetime import datetime
+    d = client.get("/api/v1/applications/APP-2026-0839", headers=as_officer).json()
+    for v in (d["submittedAt"], d["updatedAt"], d["documents"][0]["uploadedAt"], d["timeline"][0]["createdAt"]):
+        assert datetime.fromisoformat(v.replace("Z", "+00:00")).utcoffset() is not None
+

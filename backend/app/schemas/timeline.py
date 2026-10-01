@@ -1,7 +1,16 @@
 """TimelineEvent Pydantic Schemas."""
 
-from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field
+from datetime import datetime, timezone
+from typing import Annotated, Optional
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+
+def _as_utc(value: datetime) -> datetime:
+    """DB timestamps are naive UTC; always serialize them as UTC-aware ISO."""
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+UTCDatetime = Annotated[datetime, AfterValidator(_as_utc)]
 
 
 class TimelineEventBase(BaseModel):
@@ -24,4 +33,5 @@ class TimelineEventCreate(TimelineEventBase):
 class TimelineEventResponse(TimelineEventBase):
     id: str
     application_id: Optional[str] = Field(None, alias="applicationId")
+    created_at: Optional[UTCDatetime] = Field(None, alias="createdAt")
 

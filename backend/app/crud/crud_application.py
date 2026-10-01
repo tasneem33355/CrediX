@@ -1,11 +1,52 @@
 """CRUD operations for Loan Applications, Timeline, and Documents."""
 
-import random
-from typing import List, Optional, Tuple
+import secrets
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from app.models.application import LoanApplication, TimelineEvent, Document
+from app.database import new_id
+from app.models.application import DecisionAudit, Document, LoanApplication, TimelineEvent
+from app.models.user import User
 from app.schemas.application import LoanApplicationCreate, LoanApplicationUpdate
+
+
+class DecisionConflict(Exception):
+    """Raised when an application already has a final (approved/rejected) decision."""
+
+
+FINAL_STATUSES = {"approved", "rejected"}
+
+
+def _new_application_id(db: Session) -> str:
+    for _ in range(5):
+        candidate = f"APP-{datetime.utcnow().year}-{secrets.token_hex(4).upper()}"
+        if not get_application_by_id(db, candidate):
+            return candidate
+    raise RuntimeError("Could not allocate a unique application id")
+
+
+def _audit(
+    db: Session, *, application_id: str, action: str, actor: Optional[User],
+    decision: Optional[str] = None, previous_status: Optional[str] = None,
+    new_status: Optional[str] = None, notes: Optional[str] = None,
+    snapshot: Optional[Dict[str, Any]] = None,
+) -> None:
+    db.add(DecisionAudit(
+        id=new_id("aud"), application_id=application_id, action=action, decision=decision,
+        previous_status=previous_status, new_status=new_status,
+        actor_user_id=actor.id if actor else None, actor_name=actor.name_en if actor else None,
+        notes=notes, snapshot=snapshot,
+    ))
+
+
+def get_audit_trail(db: Session, app_id: str) -> List[DecisionAudit]:
+    return (
+        db.query(DecisionAudit)
+        .filter(DecisionAudit.application_id == app_id)
+        .order_by(DecisionAudit.created_at.asc())
+        .all()
+    )
 
 
 def get_application_by_id(db: Session, app_id: str) -> Optional[LoanApplication]:
@@ -54,9 +95,10 @@ def create_application(
     db: Session,
     app_in: LoanApplicationCreate,
     applicant_id: Optional[str] = None,
+    actor: Optional[User] = None,
 ) -> LoanApplication:
     # Generate ID if not provided
-    app_id = app_in.id or f"APP-2026-{random.randint(1000, 9999)}"
+    app_id = app_in.id or _new_application_id(db)
 
     # Default labels
     loan_type_labels = {
@@ -143,7 +185,7 @@ def create_application(
     # Create initial timeline events
     initial_timeline = [
         TimelineEvent(
-            id=f"t1_{app_id}",
+            id=new_id("tl"),
             application_id=app_id,
             title="استلام الطلب",
             title_en="Application Ingestion",
@@ -154,7 +196,7 @@ def create_application(
             icon_type="receipt",
         ),
         TimelineEvent(
-            id=f"t2_{app_id}",
+            id=new_id("tl"),
             application_id=app_id,
             title="استخراج البيانات بالـ OCR",
             title_en="OCR Extraction",
@@ -165,7 +207,7 @@ def create_application(
             icon_type="ocr",
         ),
         TimelineEvent(
-            id=f"t3_{app_id}",
+            id=new_id("tl"),
             application_id=app_id,
             title="المراجعة النهائية والقرار",
             title_en="Final Decision",
@@ -177,84 +219,98 @@ def create_application(
         ),
     ]
     db.add_all(initial_timeline)
+    _audit(db, application_id=app_id, action="created", actor=actor, new_status="under_review")
 
     db.commit()
     db.refresh(db_app)
     return db_app
 
 
-def update_application(db: Session, app_id: str, app_update: LoanApplicationUpdate) -> Optional[LoanApplication]:
+def update_application(
+    db: Session, app_id: str, app_update: LoanApplicationUpdate, actor: Optional[User] = None,
+) -> Optional[LoanApplication]:
     db_app = get_application_by_id(db, app_id)
     if not db_app:
         return None
 
-    update_data = app_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(db_app, field, value)
+    changes: Dict[str, Any] = {}
+    for field, value in app_update.model_dump(exclude_unset=True).items():
+        old = getattr(db_app, field)
+        if old != value:
+            changes[field] = {"from": float(old) if hasattr(old, "as_tuple") else old, "to": value}
+            setattr(db_app, field, value)
 
-    db_app.last_updated = "الآن"
+    if changes:
+        db_app.last_updated = "الآن"  # legacy display column
+        _audit(db, application_id=app_id, action="edited", actor=actor, snapshot={"changes": changes})
     db.commit()
     db.refresh(db_app)
     return db_app
 
 
-def record_officer_decision(db: Session, app_id: str, decision: str, notes: Optional[str] = None) -> Optional[LoanApplication]:
+_DECISION_OUTCOMES = {
+    "approve": ("approved", "اعتماد التمويل", "Financing Approved",
+                "تم اعتماد التمويل وإصدار الموافقة الائتمانية بنجاح من موظف الائتمان.",
+                "Financing application approved successfully by credit officer."),
+    "reject": ("rejected", "رفض الطلب", "Application Rejected",
+               "تم رفض الطلب وتوثيق السبب في السجل الائتماني.",
+               "Application rejected and recorded in credit audit log."),
+    "manual": ("under_review", "تحويل للمراجعة البشرية", "Human Review Transferred",
+               "تم تحويل الطلب إلى قائمة المراجعة البشرية الإضافية.",
+               "Application transferred to human review queue."),
+}
+
+
+def record_officer_decision(
+    db: Session, app_id: str, decision: str, notes: Optional[str] = None, officer: Optional[User] = None,
+) -> Optional[LoanApplication]:
+    """The AI recommendation is evidence and is left untouched; the human decision, the
+    officer and the time are stored on the application and appended to the audit trail."""
     db_app = get_application_by_id(db, app_id)
     if not db_app:
         return None
+    if db_app.status in FINAL_STATUSES:
+        raise DecisionConflict(f"Application {app_id} already has a final decision ({db_app.status})")
 
-    if decision == "approve":
-        db_app.status = "approved"
-        db_app.ai_recommendation = "approve"
-        db_app.ai_recommendation_label = "موافقة معتمدة"
-        db_app.ai_recommendation_label_en = "Approved"
-        event_title = "اعتماد التمويل"
-        event_title_en = "Financing Approved"
-        event_desc = notes or "تم اعتماد التمويل وإصدار الموافقة الائتمانية بنجاح من موظف الائتمان."
-        event_desc_en = notes or "Financing application approved successfully by credit officer."
-    elif decision == "reject":
-        db_app.status = "rejected"
-        db_app.ai_recommendation = "reject"
-        db_app.ai_recommendation_label = "رفض الطلب"
-        db_app.ai_recommendation_label_en = "Rejected"
-        event_title = "رفض الطلب"
-        event_title_en = "Application Rejected"
-        event_desc = notes or "تم رفض الطلب وتوثيق السبب في السجل الائتماني."
-        event_desc_en = notes or "Application rejected and recorded in credit audit log."
-    else:
-        db_app.status = "under_review"
-        db_app.ai_recommendation = "manual_review"
-        db_app.ai_recommendation_label = "مراجعة بشرية"
-        db_app.ai_recommendation_label_en = "Manual Review"
-        event_title = "تحويل للمراجعة البشرية"
-        event_title_en = "Human Review Transferred"
-        event_desc = notes or "تم تحويل الطلب إلى قائمة المراجعة البشرية الإضافية."
-        event_desc_en = notes or "Application transferred to human review queue."
+    new_status, title, title_en, desc, desc_en = _DECISION_OUTCOMES[decision]
+    previous_status = db_app.status
 
-    db_app.last_updated = "الآن"
+    db_app.status = new_status
+    db_app.final_decision = decision
+    db_app.decided_by = officer.id if officer else None
+    db_app.decided_at = datetime.utcnow()
+    db_app.decision_notes = notes
+    db_app.last_updated = "الآن"  # legacy display column
 
-    # Add decision to timeline
-    event = TimelineEvent(
-        id=f"decision_{app_id}_{random.randint(100, 999)}",
-        application_id=app_id,
-        title=event_title,
-        title_en=event_title_en,
-        timestamp="الآن",
-        description=event_desc,
-        description_en=event_desc_en,
-        status="completed",
-        icon_type="review",
+    db.add(TimelineEvent(
+        id=new_id("tl"), application_id=app_id, title=title, title_en=title_en,
+        timestamp="الآن",  # legacy display column
+        description=notes or desc, description_en=notes or desc_en,
+        status="completed", icon_type="review",
+    ))
+    _audit(
+        db, application_id=app_id, action="decision", actor=officer, decision=decision,
+        previous_status=previous_status, new_status=new_status, notes=notes,
+        snapshot={
+            "ai_recommendation": db_app.ai_recommendation,
+            "ai_confidence": db_app.ai_confidence,
+            "credit_score": db_app.credit_score,
+            "fraud_risk_score": db_app.fraud_risk_score,
+        },
     )
-    db.add(event)
     db.commit()
     db.refresh(db_app)
     return db_app
 
 
-def delete_application(db: Session, app_id: str) -> bool:
+def delete_application(db: Session, app_id: str, actor: Optional[User] = None) -> bool:
     db_app = get_application_by_id(db, app_id)
     if not db_app:
         return False
+    _audit(
+        db, application_id=app_id, action="deleted", actor=actor, previous_status=db_app.status,
+        snapshot={"applicant_name": db_app.applicant_name, "national_id": db_app.national_id},
+    )
     db.delete(db_app)
     db.commit()
     return True

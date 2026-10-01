@@ -1,13 +1,24 @@
 """LoanApplication, Document, and TimelineEvent ORM Models."""
 
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import (
+    Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Integer,
+    JSON, Numeric, String, Text, UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.database import Base
+
+# Queryable JSONB on PostgreSQL, plain JSON on SQLite (tests).
+JSONType = JSON().with_variant(JSONB(), "postgresql")
 
 
 class LoanApplication(Base):
     __tablename__ = "loan_applications"
+    __table_args__ = (
+        CheckConstraint("requested_amount > 0", name="ck_loan_applications_amount_positive"),
+        CheckConstraint("tenure_months BETWEEN 1 AND 480", name="ck_loan_applications_tenure_range"),
+    )
 
     id = Column(String(50), primary_key=True, index=True)  # e.g., 'APP-2026-0839'
     applicant_id = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -23,14 +34,20 @@ class LoanApplication(Base):
     loan_type = Column(String(30), nullable=False, default="personal")  # 'personal' | 'sme' | 'auto' | 'mortgage'
     loan_type_label = Column(String(100), nullable=True)
     loan_type_label_en = Column(String(100), nullable=True)
-    requested_amount = Column(Float, nullable=False)
+    requested_amount = Column(Numeric(14, 2), nullable=False)
     currency = Column(String(10), default="ج.م")
     tenure_months = Column(Integer, default=36)
     purpose = Column(Text, nullable=True)
     date = Column(String(50), nullable=True)
     last_updated = Column(String(50), nullable=True)
     status = Column(String(30), nullable=False, default="under_review")  # 'under_review' | 'approved' | 'suspicious' | 'rejected'
-    submitted_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+
+    # قرار الموظف منفصل عن توصية الـ AI
+    final_decision = Column(String(20), nullable=True)  # 'approve' | 'reject' | 'manual'
+    decided_by = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    decision_notes = Column(Text, nullable=True)
 
     # Explainable AI Recommendation (placeholders with sensible defaults)
     ai_recommendation = Column(String(30), nullable=True)  # 'approve' | 'manual_review' | 'reject'
@@ -67,7 +84,7 @@ class LoanApplication(Base):
     fraud_signals = Column(JSON, nullable=True, default=list)
 
     # Relationships
-    applicant = relationship("User", back_populates="applications")
+    applicant = relationship("User", back_populates="applications", foreign_keys=[applicant_id])
     documents = relationship("Document", back_populates="application", cascade="all, delete-orphan")
     timeline = relationship("TimelineEvent", back_populates="application", cascade="all, delete-orphan")
 
@@ -113,3 +130,55 @@ class TimelineEvent(Base):
 
     application = relationship("LoanApplication", back_populates="timeline")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExtractionResult(Base):
+    """Raw OCR/extraction payload exactly as received."""
+    __tablename__ = "extraction_results"
+    __table_args__ = (UniqueConstraint("application_id", "payload_sha256", name="uq_extraction_application_payload"),)
+
+    id = Column(String(50), primary_key=True)
+    application_id = Column(String(50), ForeignKey("loan_applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    source = Column(String(50), nullable=False, default="ocr")
+    schema_version = Column(String(20), nullable=False, default="1")
+    payload_sha256 = Column(String(64), nullable=False)
+    payload = Column(JSONType, nullable=False)
+    is_consistent = Column(Boolean, nullable=True)
+    warnings = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ModelRun(Base):
+    """One call to an ML/LLM service: what ran, which version, what came back."""
+    __tablename__ = "model_runs"
+
+    id = Column(String(50), primary_key=True)
+    application_id = Column(String(50), ForeignKey("loan_applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False, index=True)  # 'ocr' | 'fraud' | 'pd' | 'explain'
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50), nullable=True)
+    status = Column(String(20), nullable=False, default="pending")  # pending|success|failed|timeout|skipped
+    input_sha256 = Column(String(64), nullable=True)
+    output = Column(JSONType, nullable=True)
+    error = Column(Text, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    requested_by = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class DecisionAudit(Base):
+    """Append-only trail. No FK to loan_applications on purpose: it survives deletion."""
+    __tablename__ = "decision_audit"
+
+    id = Column(String(50), primary_key=True)
+    application_id = Column(String(50), nullable=False, index=True)
+    action = Column(String(20), nullable=False)  # created | decision | edited | deleted
+    decision = Column(String(20), nullable=True)
+    previous_status = Column(String(30), nullable=True)
+    new_status = Column(String(30), nullable=True)
+    actor_user_id = Column(String(50), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    actor_name = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    snapshot = Column(JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)

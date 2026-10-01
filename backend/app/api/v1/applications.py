@@ -15,10 +15,12 @@ from app.database import get_db
 from app.crud.crud_application import (
     get_application_by_id,
     get_applications,
+    get_audit_trail,
     create_application,
     update_application,
     record_officer_decision,
     delete_application,
+    DecisionConflict,
 )
 from app.models.user import User
 from app.schemas.application import (
@@ -26,6 +28,7 @@ from app.schemas.application import (
     LoanApplicationCreate,
     LoanApplicationUpdate,
     OfficerDecisionRequest,
+    DecisionAuditResponse,
 )
 
 router = APIRouter(prefix="/applications", tags=["Loan Applications"])
@@ -89,7 +92,7 @@ def submit_loan_application(
     """
     if not is_officer(current_user):
         app_in.id = None
-    return create_application(db, app_in, applicant_id=current_user.id)
+    return create_application(db, app_in, applicant_id=current_user.id, actor=current_user)
 
 
 @router.patch("/{app_id}", response_model=LoanApplicationResponse)
@@ -97,10 +100,10 @@ def modify_application(
     app_id: str,
     app_update: LoanApplicationUpdate,
     db: Session = Depends(get_db),
-    _officer: User = Depends(require_officer),
+    officer: User = Depends(require_officer),
 ):
-    """Update fields of an existing loan application (officers only)."""
-    updated = update_application(db, app_id, app_update)
+    """Update details of an application (officers only; status/scores are not editable here)."""
+    updated = update_application(db, app_id, app_update, actor=officer)
     if not updated:
         raise _not_found(app_id)
     return updated
@@ -111,10 +114,14 @@ def process_decision(
     app_id: str,
     decision_req: OfficerDecisionRequest,
     db: Session = Depends(get_db),
-    _officer: User = Depends(require_officer),
+    officer: User = Depends(require_officer),
 ):
-    """Submit credit officer decision: 'approve', 'reject', or 'manual' (officers only)."""
-    updated = record_officer_decision(db, app_id, decision_req.decision, decision_req.notes)
+    """Submit credit officer decision: 'approve', 'reject' or 'manual' (officers only).
+    A final decision (approved/rejected) cannot be overwritten: returns 409."""
+    try:
+        updated = record_officer_decision(db, app_id, decision_req.decision, decision_req.notes, officer=officer)
+    except DecisionConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     if not updated:
         raise _not_found(app_id)
     return updated
@@ -124,9 +131,20 @@ def process_decision(
 def remove_application(
     app_id: str,
     db: Session = Depends(get_db),
-    _officer: User = Depends(require_officer),
+    officer: User = Depends(require_officer),
 ):
     """Delete a loan application (officers only)."""
-    if not delete_application(db, app_id):
+    if not delete_application(db, app_id, actor=officer):
         raise _not_found(app_id)
     return None
+
+
+@router.get("/{app_id}/audit", response_model=List[DecisionAuditResponse])
+def application_audit_trail(
+    app_id: str,
+    db: Session = Depends(get_db),
+    _officer: User = Depends(require_officer),
+):
+    """Chronological audit trail (officers only; still available after the application is deleted)."""
+    return get_audit_trail(db, app_id)
+

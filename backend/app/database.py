@@ -1,5 +1,6 @@
 """SQLAlchemy Database Engine and Session Management."""
 
+import secrets
 from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -28,3 +29,8 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def new_id(prefix: str) -> str:
+    """Collision-safe opaque identifier, e.g. ``doc_3fa91c0b7d2e`` (48 random bits)."""
+    return f"{prefix}_{secrets.token_hex(6)}"

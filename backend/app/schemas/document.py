@@ -2,6 +2,7 @@
 
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field
+from app.schemas.timeline import UTCDatetime
 
 
 class DocumentBase(BaseModel):
@@ -27,4 +28,5 @@ class DocumentCreate(DocumentBase):
 class DocumentResponse(DocumentBase):
     id: str
     application_id: Optional[str] = Field(None, alias="applicationId")
+    uploaded_at: Optional[UTCDatetime] = Field(None, alias="uploadedAt")
 

@@ -1,10 +1,10 @@
 """CRUD operations for Kanban Case Cards."""
 
-import random
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models.case import CaseCard
 from app.schemas.case import CaseCardCreate, CaseCardUpdate
+from app.database import new_id
 
 
 def get_case_by_id(db: Session, case_id: str) -> Optional[CaseCard]:
@@ -19,8 +19,8 @@ def get_cases(db: Session, column_id: Optional[str] = None) -> List[CaseCard]:
 
 
 def create_case(db: Session, case_in: CaseCardCreate) -> CaseCard:
-    case_id = case_in.id or f"case_{random.randint(100, 999)}"
-    app_id = case_in.application_id or f"APP-2026-{random.randint(1000, 9999)}"
+    case_id = case_in.id or new_id("case")
+    app_id = case_in.application_id or new_id("orphan")
     initials = case_in.initials or (case_in.client_name.strip()[:1] if case_in.client_name else "ع")
 
     db_case = CaseCard(

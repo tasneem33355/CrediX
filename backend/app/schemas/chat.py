@@ -2,6 +2,7 @@
 
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field
+from app.schemas.timeline import UTCDatetime
 
 
 class ChatCitation(BaseModel):
@@ -35,6 +36,7 @@ class ChatMessageResponse(BaseModel):
     text: str
     text_en: Optional[str] = Field(None, alias="textEn")
     timestamp: str
+    created_at: Optional[UTCDatetime] = Field(None, alias="createdAt")
     citations: Optional[List[ChatCitation]] = Field(default_factory=list)
     suggested_action: Optional[SuggestedAction] = Field(None, alias="suggestedAction")
 
@@ -55,6 +57,7 @@ class ChatSessionResponse(BaseModel):
     time_ago: str = Field("الآن", alias="timeAgo")
     time_ago_en: str = Field("Just now", alias="timeAgoEn")
     active: bool = True
+    updated_at: Optional[UTCDatetime] = Field(None, alias="updatedAt")
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 

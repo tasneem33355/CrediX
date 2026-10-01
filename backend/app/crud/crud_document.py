@@ -1,10 +1,10 @@
 """CRUD operations for Documents."""
 
-import random
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models.application import Document, LoanApplication
 from app.schemas.document import DocumentCreate
+from app.database import new_id
 
 
 def get_document_by_id(db: Session, doc_id: str) -> Optional[Document]:
@@ -30,7 +30,7 @@ def get_documents(
 
 
 def create_document(db: Session, doc_in: DocumentCreate) -> Document:
-    doc_id = doc_in.id or f"doc_{random.randint(1000, 9999)}"
+    doc_id = doc_in.id or new_id("doc")
     db_doc = Document(
         id=doc_id,
         application_id=doc_in.application_id,

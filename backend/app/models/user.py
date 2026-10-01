@@ -22,5 +22,5 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    applications = relationship("LoanApplication", back_populates="applicant")
+    applications = relationship("LoanApplication", back_populates="applicant", foreign_keys="LoanApplication.applicant_id")
     chat_sessions = relationship("ChatSession", back_populates="user")

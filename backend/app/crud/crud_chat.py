@@ -3,11 +3,11 @@
 The generated assistant response is DEMO ONLY, not a real RAG/LLM result.
 """
 
-import random
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models.chat import ChatSession, ChatMessage
 from app.schemas.chat import ChatSessionCreate, ChatMessageCreate
+from app.database import new_id
 
 
 def get_chat_sessions(db: Session, user_id: Optional[str] = None) -> List[ChatSession]:
@@ -22,7 +22,7 @@ def get_chat_session_by_id(db: Session, session_id: str) -> Optional[ChatSession
 
 
 def create_chat_session(db: Session, session_in: ChatSessionCreate, user_id: Optional[str] = None) -> ChatSession:
-    session_id = f"sess_{random.randint(100, 999)}"
+    session_id = new_id("sess")
     db_session = ChatSession(
         id=session_id,
         user_id=user_id,
@@ -57,7 +57,7 @@ def add_chat_message_and_respond(
     message_in: ChatMessageCreate,
 ) -> Tuple[ChatMessage, ChatMessage]:
     """Adds user message and generates a realistic placeholder AI response with citations."""
-    user_msg_id = f"msg_user_{random.randint(1000, 9999)}"
+    user_msg_id = new_id("msg")
     user_msg = ChatMessage(
         id=user_msg_id,
         session_id=session_id,
@@ -99,7 +99,7 @@ def add_chat_message_and_respond(
         ]
         suggested_action = None
 
-    bot_msg_id = f"msg_bot_{random.randint(1000, 9999)}"
+    bot_msg_id = new_id("msg")
     bot_msg = ChatMessage(
         id=bot_msg_id,
         session_id=session_id,
