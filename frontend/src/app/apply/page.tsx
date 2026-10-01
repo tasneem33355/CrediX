@@ -14,6 +14,7 @@ import {
   Lock,
   UserCheck,
   Paperclip,
+  AlertTriangle,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuth } from '@/context/AuthContext';
@@ -21,7 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { CredixLogo } from '@/components/ui/CredixLogo';
-import { uploadAndProcessDocuments } from '@/lib/api';
+import { ingestOcrJson, uploadAndCheckDocuments, type GateResult } from '@/lib/api';
 import { isDemoMode } from '@/lib/config';
 import { RequireRole } from '@/components/auth/RequireRole';
 
@@ -41,6 +42,14 @@ const EMPTY_SLOTS: Record<SlotKey, File | null> = {
   salaryCertificate: null,
   bankStatement: null,
   iscore: null,
+};
+
+// Which upload slots belong to each document key returned by the gate.
+const DOC_TO_SLOTS: Record<string, SlotKey[]> = {
+  national_id: ['nationalIdFront', 'nationalIdBack'],
+  salary_certificate: ['salaryCertificate'],
+  bank_statement: ['bankStatement'],
+  iscore: ['iscore'],
 };
 
 export default function ApplyPage() {
@@ -66,7 +75,12 @@ export default function ApplyPage() {
   const [submittedAppId, setSubmittedAppId] = useState<string>('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { session } = useAuth();
-
+  const [gate, setGate] = useState<GateResult | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const slotsToReupload = new Set<SlotKey>(
+    (gate?.reupload_documents ?? []).flatMap((d) => DOC_TO_SLOTS[d] ?? [])
+  );
+  
   const steps = [
     { num: 1, title: language === 'ar' ? 'المعلومات الشخصية' : 'Personal Information' },
     { num: 2, title: language === 'ar' ? 'تفاصيل التمويل' : 'Financing details' },
@@ -84,33 +98,70 @@ export default function ApplyPage() {
       ? Number(formData.requestedAmount) > 0
       : currentStep === 3
       ? filesReady
-      : true;
+      : !gate?.requires_acknowledgement || acknowledged;
 
   const handleNext = async () => {
-    if (currentStep < 4) {
+    if (currentStep < 3) {
       setCurrentStep(currentStep + 1);
       return;
     }
     setIsSubmitting(true);
     setSubmitError(null);
     try {
+      const token = session?.access_token;
+
+      // Step 3 -> run the validation gate only (nothing is saved yet).
+      if (currentStep === 3) {
+        if (isDemoMode) {
+          setCurrentStep(4);
+          return;
+        }
+        if (!token) {
+          throw new Error(language === 'ar' ? 'سجّل الدخول أولاً ثم أعد المحاولة.' : 'Please sign in first.');
+        }
+        const result = await uploadAndCheckDocuments(
+          {
+            nationalIdFront: slots.nationalIdFront as File,
+            nationalIdBack: slots.nationalIdBack as File,
+            salaryCertificate: slots.salaryCertificate as File,
+            bankStatement: slots.bankStatement as File,
+            iscore: slots.iscore as File,
+          },
+          token
+        );
+        setGate(result);
+        setAcknowledged(false);
+        if (result.can_proceed) {
+          setCurrentStep(4);
+        } else {
+          // Empty the slots that must be re-uploaded so the client picks new files.
+          setSlots((prev) => {
+            const next = { ...prev };
+            result.reupload_documents.forEach((d) =>
+              (DOC_TO_SLOTS[d] ?? []).forEach((k) => {
+                next[k] = null;
+              })
+            );
+            return next;
+          });
+        }
+        return;
+      }
+
+      // Step 4 -> register the application from the checked OCR data.
       if (isDemoMode) {
         setSubmittedAppId('APP-DEMO');
         setIsSubmitted(true);
         return;
       }
-      const token = session?.access_token;
       if (!token) {
-        throw new Error(language === 'ar' ? 'سجّل الدخول أولاً ثم اعد المحاولة.' : 'Please sign in first.');
+        throw new Error(language === 'ar' ? 'سجّل الدخول أولاً ثم أعد المحاولة.' : 'Please sign in first.');
       }
-      const result = await uploadAndProcessDocuments(
-        {
-          nationalIdFront: slots.nationalIdFront as File,
-          nationalIdBack: slots.nationalIdBack as File,
-          salaryCertificate: slots.salaryCertificate as File,
-          bankStatement: slots.bankStatement as File,
-          iscore: slots.iscore as File,
-        },
+      if (!gate || !gate.can_proceed) {
+        throw new Error(language === 'ar' ? 'يرجى فحص المستندات أولاً.' : 'Please check your documents first.');
+      }
+      const created = await ingestOcrJson(
+        gate.ocr_data,
         {
           loanType: formData.loanType,
           requestedAmount: Number(formData.requestedAmount),
@@ -120,10 +171,10 @@ export default function ApplyPage() {
         },
         token
       );
-      setSubmittedAppId(result.application_id);
+      setSubmittedAppId(created.application_id);
       setIsSubmitted(true);
     } catch (err: any) {
-      setSubmitError(err.message || (language === 'ar' ? 'حدث خطأ أثناء رفع المستندات، حاول مرة أخرى.' : 'Failed to process documents.'));
+      setSubmitError(err.message || (language === 'ar' ? 'حدث خطأ، حاول مرة أخرى.' : 'Something went wrong, please try again.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -386,7 +437,11 @@ export default function ApplyPage() {
                     {SLOT_DEFS.map((slot) => (
                       <div
                         key={slot.key}
-                        className="flex items-center justify-between gap-3 p-3 bg-surface-subtle border border-border rounded-xl"
+                        className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
+                          slotsToReupload.has(slot.key) && slots[slot.key] === null
+                            ? 'bg-semantic-error-subtle border-semantic-error/40'
+                            : 'bg-surface-subtle border-border'
+                        }`}
                       >
                         <div className="min-w-0 text-start">
                           <p className="text-xs font-semibold text-text-primary">{language === 'ar' ? slot.ar : slot.en}</p>
@@ -413,6 +468,120 @@ export default function ApplyPage() {
                   </div>
                 )}
 
+                 {/* Gate result: documents that must be re-uploaded */}
+                {currentStep === 3 && gate && !gate.can_proceed && (
+                  <div className="p-4 rounded-2xl bg-semantic-error-subtle border border-semantic-error/30 space-y-3 text-start">
+                    <div className="flex items-center gap-2 text-semantic-error text-xs font-bold">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>
+                        {gate.is_tampered_suspected
+                          ? (language === 'ar' ? 'تعذّر قبول بعض المستندات' : 'Some documents could not be accepted')
+                          : (language === 'ar' ? 'بعض المستندات تحتاج إعادة رفع' : 'Some documents need to be re-uploaded')}
+                      </span>
+                    </div>
+                    <ul className="space-y-2">
+                      {gate.issues
+                        .filter((i) => i.action === 'reupload')
+                        .map((issue, idx) => (
+                          <li key={idx} className="text-xs text-text-primary">
+                            <span className="font-bold">
+                              {language === 'ar' ? issue.document_label : issue.document_label_en}:
+                            </span>{' '}
+                            {language === 'ar' ? issue.message : issue.message_en}
+                          </li>
+                        ))}
+                    </ul>
+                    <p className="text-[11px] text-text-secondary">
+                      {language === 'ar'
+                        ? 'اختر نسخة أوضح من المستندات المذكورة ثم اضغط «فحص المستندات» لإعادة الفحص.'
+                        : 'Choose clearer copies of the documents above, then press “Check documents” again.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* STEP 4: Review & Submit */}
+                {currentStep === 4 && (
+                  <div className="space-y-4 text-xs text-start">
+                    <div className="p-4 rounded-2xl bg-surface-subtle space-y-2">
+                      <div className="flex justify-between py-1 border-b border-border">
+                        <span className="text-text-muted">{language === 'ar' ? 'الاسم بالكامل:' : 'Full Name:'}</span>
+                        <span className="font-bold text-text-primary">{formData.fullName}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border">
+                        <span className="text-text-muted">{language === 'ar' ? 'الرقم القومي:' : 'National ID:'}</span>
+                        <span className="font-bold text-text-primary font-mono">{formData.nationalId}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border">
+                        <span className="text-text-muted">{language === 'ar' ? 'رقم الموبايل:' : 'Mobile Number:'}</span>
+                        <span className="font-bold text-text-primary font-mono">{formData.mobileNumber}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border">
+                        <span className="text-text-muted">{language === 'ar' ? 'نوع التمويل:' : 'Loan Type:'}</span>
+                        <span className="font-bold text-text-primary">
+                          {({
+                            personal: t('loanType.personal'),
+                            sme: t('loanType.sme'),
+                            auto: t('loanType.auto'),
+                            mortgage: t('loanType.mortgage'),
+                          } as Record<string, string>)[formData.loanType]}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border">
+                        <span className="text-text-muted">{language === 'ar' ? 'المبلغ المطلوب:' : 'Requested Amount:'}</span>
+                        <span className="font-bold text-brand-navy">
+                          {Number(formData.requestedAmount || 0).toLocaleString()} {language === 'ar' ? 'ج.م' : 'EGP'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-text-muted">{language === 'ar' ? 'مدة السداد:' : 'Tenure:'}</span>
+                        <span className="font-bold text-text-primary">
+                          {formData.tenureMonths} {language === 'ar' ? 'شهراً' : 'months'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {gate && gate.issues.length > 0 && (
+                      <div className="p-4 rounded-2xl bg-semantic-warning-subtle border border-semantic-warning/30 space-y-3">
+                        <div className="flex items-center gap-2 font-bold text-text-primary">
+                          <AlertTriangle className="w-4 h-4 text-semantic-warning" />
+                          <span>{language === 'ar' ? 'ملاحظات على مستنداتك' : 'Notes about your documents'}</span>
+                        </div>
+                        <ul className="space-y-2">
+                          {gate.issues.map((issue, idx) => (
+                            <li key={idx} className="text-text-primary">
+                              <span className="font-bold">
+                                {language === 'ar' ? issue.document_label : issue.document_label_en}:
+                              </span>{' '}
+                              {language === 'ar' ? issue.message : issue.message_en}
+                            </li>
+                          ))}
+                        </ul>
+                        {gate.requires_acknowledgement && (
+                          <label className="flex items-start gap-2 cursor-pointer pt-1">
+                            <input
+                              type="checkbox"
+                              checked={acknowledged}
+                              onChange={(e) => setAcknowledged(e.target.checked)}
+                              className="mt-0.5"
+                            />
+                            <span className="text-text-secondary leading-relaxed">
+                              {language === 'ar'
+                                ? 'أقرّ بأنني اطّلعت على الملاحظات أعلاه، وأن البيانات والمستندات المقدّمة صحيحة، وأوافق على متابعة تقديم الطلب.'
+                                : 'I confirm I have reviewed the notes above, that the information and documents provided are correct, and I agree to submit my application.'}
+                            </span>
+                          </label>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {submitError && (
+                  <div className="p-3 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-xs text-start">
+                    {submitError}
+                  </div>
+                )}  
+                
                 {/* Bottom Wizard Actions */}
                 <div className="pt-4 border-t border-border flex items-center justify-between">
                   {currentStep > 1 ? (
@@ -434,7 +603,11 @@ export default function ApplyPage() {
                     icon={<Arrow className="w-4 h-4" />}
                   >
                     {isSubmitting
-                      ? (language === 'ar' ? 'جاري رفع المستندات وفحصها...' : 'Submitting...')
+                      ? (currentStep === 3
+                          ? (language === 'ar' ? 'جاري فحص المستندات...' : 'Checking documents...')
+                          : (language === 'ar' ? 'جاري إرسال الطلب...' : 'Submitting...'))
+                      : currentStep === 3
+                      ? (language === 'ar' ? 'فحص المستندات' : 'Check documents')
                       : currentStep === 4
                       ? (language === 'ar' ? 'إرسال الطلب للتقييم' : 'Submit Application')
                       : t('action.next')}
