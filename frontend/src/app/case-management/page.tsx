@@ -83,6 +83,12 @@ export default function CaseManagementPage() {
           bg: 'bg-[#FEE2E2] text-[#991B1B] border-[#F87171]',
           icon: <AlertTriangle className="w-3 h-3 text-[#DC2626] shrink-0" />,
         };
+      case 'تم الرفض':
+      case 'Rejected':
+        return {
+          bg: 'bg-[#FEE2E2] text-[#991B1B] border-[#F87171]',
+          icon: <AlertTriangle className="w-3 h-3 text-[#DC2626] shrink-0" />,
+        };        
       case 'تم الاعتماد':
       case 'Approved':
         return {
