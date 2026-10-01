@@ -33,3 +33,12 @@ class FullPipelineScoreResponse(BaseModel):
     fraud: Dict[str, Any]
     explanation: Dict[str, Any]
     validation_warnings: List[Dict[str, Any]]
+
+class OCRGateResponse(BaseModel):
+    """Result of the validation gate: nothing is saved until the client confirms."""
+    status: str  # "passed" | "needs_acknowledgement" | "blocked"
+    can_proceed: bool
+    requires_acknowledgement: bool
+    is_tampered_suspected: bool
+    issues: List[Dict[str, Any]]
+    ocr_data: Dict[str, Any]
