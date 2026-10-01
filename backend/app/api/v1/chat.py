@@ -85,6 +85,9 @@ async def post_chat_prompt(
         {"role": m.sender, "content": m.text}
         for m in get_session_messages(db, session_id)[-6:]
     ]
+    # The explainer needs the conversation to start with the officer's turn.
+    while history and history[0]["role"] != "user":
+        history.pop(0)    
     lang = message_in.lang if message_in.lang in ("ar", "en") else "ar"
     result = await ask_explainer(blocks, message_in.text, lang=lang, history=history)
 
