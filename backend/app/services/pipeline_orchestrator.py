@@ -26,7 +26,7 @@ from app.services.ocr_validator import run_full_ocr_validation
 from app.services.fraud_client import score_fraud
 from app.services.credit_risk_client import score_credit_risk
 from app.services.llm_explainer_client import generate_explanation
-
+from app.services.scoring_payload import build_scoring_payload
 
 def _sha256(data: Any) -> str:
     """Compute SHA256 hex digest of dictionary or string."""
