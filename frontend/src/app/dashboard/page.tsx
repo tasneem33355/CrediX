@@ -47,17 +47,15 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import {
-  mockDashboardStats,
-  mockTrendData,
-  mockStatusDonutData,
-  mockApplications,
-} from '@/data/mockData';
+
 import {
   fetchPortfolioKpis,
   fetchPortfolioConcentration,
   fetchPortfolioDrift,
   runPortfolioStressTest,
+  fetchDashboardStats,
+  fetchDashboardTrends,
+  fetchApplicationsList,
 } from '@/lib/api';
 
 // Custom Theme-Adaptive Tooltip for Recharts
@@ -100,9 +98,35 @@ const ChartTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label, un
 
 export default function DashboardPage() {
   const { t, language, formatCurrency, formatNumber, direction } = useLanguage();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
+  const token = session?.access_token;
   const router = useRouter();
+  const [dashStats, setDashStats] = useState<{ suspiciousFraud: number; suspiciousAttentionCount: number } | null>(null);
+  const [trendData, setTrendData] = useState<{ day: string; count: number }[]>([]);
+  const [recentApps, setRecentApps] = useState<any[]>([]);
 
+  useEffect(() => {
+    if (!token) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const [stats, trends, apps] = await Promise.all([
+          fetchDashboardStats(token),
+          fetchDashboardTrends(token),
+          fetchApplicationsList({ limit: 4 }, token),
+        ]);
+        if (!isMounted) return;
+        if (stats) setDashStats(stats);
+        setTrendData(trends);
+        setRecentApps(apps as any[]);
+      } catch {
+        /* keep empty state */
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [token]);
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
   const officerName = user
@@ -203,9 +227,9 @@ export default function DashboardPage() {
   };
 
   const getScoreColorClass = (score: number) => {
-    if (score >= 80) return 'bg-semantic-success-subtle text-semantic-success border-semantic-success/20';
-    if (score >= 60) return 'bg-[#E8EEF5] text-brand-navy border-brand-navy/20';
-    if (score >= 50) return 'bg-semantic-warning-subtle text-semantic-warning border-semantic-warning/20';
+    if (score >= 700) return 'bg-semantic-success-subtle text-semantic-success border-semantic-success/20';
+    if (score >= 600) return 'bg-[#E8EEF5] text-brand-navy border-brand-navy/20';
+    if (score >= 500) return 'bg-semantic-warning-subtle text-semantic-warning border-semantic-warning/20';
     return 'bg-semantic-error-subtle text-semantic-error border-semantic-error/20';
   };
 
@@ -345,10 +369,10 @@ export default function DashboardPage() {
             <div>
               <p className="text-xs font-medium text-text-secondary">{t('dashboard.suspiciousFraud')}</p>
               <p className="text-2xl sm:text-3xl font-extrabold text-text-primary tracking-tight mt-1">
-                {formatNumber(mockDashboardStats.suspiciousFraud)}
+                {formatNumber(dashStats?.suspiciousFraud ?? 0)}
               </p>
               <p className="text-[11px] text-semantic-error font-medium mt-1">
-                {mockDashboardStats.suspiciousAttentionCount} {t('dashboard.requireAttention')}
+                {dashStats?.suspiciousAttentionCount ?? 0} {t('dashboard.requireAttention')}
               </p>
             </div>
           </Card>
@@ -475,7 +499,7 @@ export default function DashboardPage() {
 
             <div className="h-64 sm:h-72 w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mockTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="credixAreaGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#1B3A5C" stopOpacity={0.22} />
@@ -573,7 +597,7 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {mockApplications.slice(0, 4).map((app) => (
+                {recentApps.map((app) => (
                   <tr
                     key={app.id}
                     tabIndex={0}
@@ -613,8 +637,13 @@ export default function DashboardPage() {
 
                     {/* Credit Score */}
                     <td className="py-3.5 px-5 text-center">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold border ${getScoreColorClass(app.creditScore)}`}>
-                        {app.creditScore}
+                      {app.creditScore != null ? (
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold border ${getScoreColorClass(app.creditScore)}`}>
+                          {app.creditScore}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-text-muted">—</span>
+                      )}
                       </span>
                     </td>
 
