@@ -2,7 +2,7 @@
  * Central API Client for CrediX Underwriting, OCR, and Scoring.
  */
 
-import type { CaseCard } from '@/types';
+import type { CaseCard, ChatMessage, ChatSession } from '@/types';
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '/api/v1').replace(/\/$/, '');
 
 function getHeaders(token?: string): HeadersInit {
@@ -144,6 +144,50 @@ export async function fetchCases(token?: string): Promise<CaseCard[]> {
   if (!res.ok) {
     throw new Error(`Failed to load cases (${res.status})`);
   }
+  return res.json();
+}
+
+async function readChatError(res: Response, fallback: string): Promise<string> {
+  const err = await res.json().catch(() => ({}));
+  return typeof err.detail === 'string' ? err.detail : `${fallback} (${res.status})`;
+}
+
+export async function fetchChatSessions(token?: string): Promise<ChatSession[]> {
+  const res = await fetch(`${API_BASE}/ai-assistant/sessions`, { headers: getHeaders(token) });
+  if (!res.ok) throw new Error(await readChatError(res, 'Failed to load conversations'));
+  return res.json();
+}
+
+export async function createChatSession(title: string, token?: string): Promise<ChatSession> {
+  const res = await fetch(`${API_BASE}/ai-assistant/sessions`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify({ title, titleEn: title }),
+  });
+  if (!res.ok) throw new Error(await readChatError(res, 'Failed to start conversation'));
+  return res.json();
+}
+
+export async function fetchChatMessages(sessionId: string, token?: string): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE}/ai-assistant/sessions/${sessionId}/messages`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) throw new Error(await readChatError(res, 'Failed to load messages'));
+  return res.json();
+}
+
+/** Returns [officerMessage, assistantMessage]. */
+export async function sendChatMessage(
+  sessionId: string,
+  payload: { text: string; applicationId: string; lang: 'ar' | 'en' },
+  token?: string
+): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE}/ai-assistant/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readChatError(res, 'Failed to send message'));
   return res.json();
 }
 
