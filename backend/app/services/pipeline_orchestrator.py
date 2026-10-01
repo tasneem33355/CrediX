@@ -45,6 +45,7 @@ async def ingest_ocr_and_create_application(
     requested_amount: float = 100000.0,
     tenure_months: int = 36,
     purpose: Optional[str] = None,
+    mobile_number: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Validate OCR payload, persist extraction result, and initialize loan application."""
     # 1. Validation
@@ -52,7 +53,14 @@ async def ingest_ocr_and_create_application(
     profile = validation_res["extracted_profile"]
     warnings = validation_res["warnings"]
     is_consistent = validation_res["is_consistent"]
-
+    
+    mobile_number = (mobile_number or "").strip()
+    if mobile_number and not (
+        mobile_number.isascii() and mobile_number.isdigit()
+        and len(mobile_number) == 11 and mobile_number[:3] in {"010", "011", "012", "015"}
+    ):
+        raise ValueError("mobile number must be an 11-digit Egyptian mobile (010/011/012/015)")
+        
     # 2. Generate application ID
     year = datetime.utcnow().year
     app_id = f"APP-{year}-{new_id('').replace('_', '').upper()[:8]}"
@@ -173,7 +181,7 @@ async def ingest_ocr_and_create_application(
         applicant_name=profile.get("applicant_name") or "عميل غير معروف",
         applicant_name_en=profile.get("applicant_name") or "Applicant",
         national_id=profile.get("national_id") or "00000000000000",
-        mobile_number="",
+        mobile_number=mobile_number,
         client_type="new",
         occupation=f"{profile.get('job_title') or ''} - {profile.get('employer') or ''}".strip(" -"),
         loan_type=loan_type,
