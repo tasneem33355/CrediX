@@ -12,6 +12,13 @@ from typing import Any, Dict, List
 from app.services.ocr_validator import run_full_ocr_validation
 
 CONFIDENCE_THRESHOLD = 0.5
+# Issues the client must fix by re-uploading the document (cannot just acknowledge them).
+REUPLOAD_CODES = {
+    "CRITICAL_FIELD_MISSING",
+    "LOW_CONFIDENCE",
+    "ISCORE_UNAVAILABLE",
+    "DOCUMENT_TAMPERING_SUSPECTED",
+}
 
 DOC_LABELS = {
     "national_id": ("بطاقة الرقم القومي", "National ID"),
@@ -109,12 +116,31 @@ def evaluate_gate(ocr_data: Dict[str, Any]) -> Dict[str, Any]:
             "code": w.get("code"), "message": w.get("message"), "message_en": w.get("message_en"),
         })
 
-    # 3. Verdict.
-    tampered = any(
-        d.get("is_tampered_suspected") for d in (ocr_data.get("documents") or [])
-    )
+    # 3. Tampering: one issue per suspected document.
+    tampered_docs: List[str] = []
+    for d in ocr_data.get("documents") or []:
+        if d.get("is_tampered_suspected"):
+            key = _DOC_TYPE_TO_KEY.get(str(d.get("document_type")), "general")
+            tampered_docs.append(key)
+            doc_ar, doc_en = DOC_LABELS[key]
+            issues.append({
+                "document": key, "document_label": doc_ar, "document_label_en": doc_en,
+                "field": None, "severity": "high", "code": "DOCUMENT_TAMPERING_SUSPECTED",
+                "message": f"يوجد اشتباه في سلامة المستند ({doc_ar}). ارفعي نسخة أصلية واضحة غير معدّلة",
+                "message_en": f"The document ({doc_en}) appears to be altered. Please upload a clear, original copy",
+            })
+
+    # 4. Decide what the client must do for each issue.
+    for issue in issues:
+        issue["action"] = "reupload" if issue.get("code") in REUPLOAD_CODES else "acknowledge"
+    reupload_documents = sorted({i["document"] for i in issues if i["action"] == "reupload"})
+
+    # 5. Verdict.
+    tampered = bool(tampered_docs)
     if tampered:
         status = "blocked"
+    elif reupload_documents:
+        status = "needs_reupload"
     elif issues:
         status = "needs_acknowledgement"
     else:
@@ -122,8 +148,9 @@ def evaluate_gate(ocr_data: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "status": status,
-        "can_proceed": status != "blocked",
+        "can_proceed": status in ("passed", "needs_acknowledgement"),
         "requires_acknowledgement": status == "needs_acknowledgement",
         "is_tampered_suspected": tampered,
         "issues": issues,
+        "reupload_documents": reupload_documents,
     }
