@@ -26,7 +26,8 @@ class SuggestedAction(BaseModel):
 class ChatMessageCreate(BaseModel):
     text: str
     text_en: Optional[str] = Field(None, alias="textEn")
-
+    application_id: Optional[str] = Field(None, alias="applicationId")
+    lang: Optional[str] = None  # 'ar' | 'en'
     model_config = ConfigDict(populate_by_name=True)
 
 
