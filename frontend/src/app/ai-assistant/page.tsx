@@ -23,101 +23,118 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Select } from '@/components/ui/Select';
+import { useAuth } from '@/context/AuthContext';
 import {
-  mockChatSessions,
-  mockInitialChatMessages,
-} from '@/data/mockData';
-import { ChatMessage } from '@/types';
+  fetchApplicationsList,
+  fetchChatSessions,
+  createChatSession,
+  fetchChatMessages,
+  sendChatMessage,
+} from '@/lib/api';
+import { ChatMessage, ChatSession } from '@/types';
 
 export default function AIAssistantPage() {
   const { t, language, direction } = useLanguage();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
-  const [sessions, setSessions] = useState(mockChatSessions);
-  const [activeSessionId, setActiveSessionId] = useState('sess_1');
-  const [messages, setMessages] = useState<ChatMessage[]>(mockInitialChatMessages);
+  const { session } = useAuth();
+  const token = session?.access_token;
+
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [apps, setApps] = useState<{ id: string; name: string; nameEn: string }[]>([]);
+  const [selectedAppId, setSelectedAppId] = useState('');
   const [inputQuestion, setInputQuestion] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Set when a session is auto-created while sending, so the message loader does not wipe the screen.
+  const skipNextLoadRef = useRef(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleSend = (textToSend?: string) => {
-    const q = textToSend || inputQuestion;
-    if (!q.trim()) return;
+  // Load the officer's conversations and the applications they can ask about.
+  useEffect(() => {
+    if (!token) return;
+    fetchChatSessions(token)
+      .then((list) => {
+        setSessions(list);
+        if (list.length > 0) setActiveSessionId(list[0].id);
+      })
+      .catch((e: Error) => setChatError(e.message));
+    fetchApplicationsList({ limit: 100 }, token)
+      .then((list) => {
+        const items = (list as any[]).map((a) => ({
+          id: a.id as string,
+          name: `${a.id} — ${a.applicantName}`,
+          nameEn: `${a.id} — ${a.applicantNameEn || a.applicantName}`,
+        }));
+        setApps(items);
+        if (items.length > 0) setSelectedAppId((prev) => prev || items[0].id);
+      })
+      .catch((e: Error) => setChatError(e.message));
+  }, [token]);
 
-    const userMsg: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      sender: 'user',
-      text: q,
-      textEn: q,
-      timestamp: new Date().toLocaleTimeString(language === 'ar' ? 'ar-EG' : 'en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    };
+  // Load the messages of the active conversation.
+  useEffect(() => {
+    if (!token || !activeSessionId) {
+      setMessages([]);
+      return;
+    }
+    if (skipNextLoadRef.current) {
+      skipNextLoadRef.current = false;
+      return;
+    }
+    fetchChatMessages(activeSessionId, token)
+      .then(setMessages)
+      .catch((e: Error) => setChatError(e.message));
+  }, [activeSessionId, token]);
 
-    setMessages((prev) => [...prev, userMsg]);
+  const handleSend = async (textToSend?: string) => {
+    const q = (textToSend ?? inputQuestion).trim();
+    if (!q || isTyping || !token) return;
+    if (!selectedAppId) {
+      setChatError(language === 'ar' ? 'اختر الطلب أولاً.' : 'Please select an application first.');
+      return;
+    }
+
+    setChatError(null);
+    const tempId = `tmp_${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: tempId, sender: 'user', text: q, textEn: q, timestamp: '' },
+    ]);
     setInputQuestion('');
     setIsTyping(true);
 
-    // Simulate RAG Assistant response with cited document proof
-    setTimeout(() => {
-      let botResponse: ChatMessage;
-
-      if (q.includes('متناقضات') || q.includes('discrepancies')) {
-        botResponse = {
-          id: `msg_bot_${Date.now()}`,
-          sender: 'assistant',
-          text: 'نعم، تم رصد تناقض بين شهادة الدخل (المعلن: 85,000 ج.م) وكشف الحساب البنكي الصادر من البنك الأهلي المصري (المتوسط الفعلي: 53,700 ج.م شهرياً).',
-          textEn: 'Yes, a discrepancy was identified between the Income Certificate (declared: 85,000 EGP) and the National Bank of Egypt statement (actual average: 53,700 EGP/month).',
-          timestamp: 'الآن',
-          citations: [
-            {
-              documentName: 'كشف حساب بنكي - صفحة 3',
-              documentNameEn: 'Bank Statement - Page 3',
-              page: 3,
-              quote: 'متوسط التدفق الشهري الدائن: 53,700 ج.م',
-            },
-            {
-              documentName: 'شهادة الدخل',
-              documentNameEn: 'Income Certificate',
-              page: 1,
-              quote: 'الدخل الصافي المعلن: 85,000 ج.م',
-            },
-          ],
-          suggestedAction: {
-            label: 'إجراء مقترح',
-            labelEn: 'Suggested Action',
-            description: 'طلب كشف حساب بنكي لـ 6 أشهر إضافية أو إقرار ضريبي موثق.',
-            descriptionEn: 'Request an additional 6-month bank statement or certified tax return.',
-          },
-        };
-      } else {
-        botResponse = {
-          id: `msg_bot_${Date.now()}`,
-          sender: 'assistant',
-          text: `بناءً على وثائق طلب ${activeSessionId === 'sess_1' ? 'أحمد فؤاد' : 'العميل'}، فإن درجة الجدارة الائتمانية تبلغ 54/100 (مخاطر متوسطة) ونسبة عبء الدين DBR تتوافق مع معايير البنك المركزي بنسبة 78%.`,
-          textEn: `Based on the application documents, the creditworthiness score is 54/100 (Medium Risk) with a DBR rating of 78% complying with CBE guidelines.`,
-          timestamp: 'الآن',
-          citations: [
-            {
-              documentName: 'تقرير الاستعلام الائتماني i-Score',
-              documentNameEn: 'i-Score Credit Report',
-              page: 1,
-              quote: 'الدرجة الائتمانية المسجلة: 54/100',
-            },
-          ],
-        };
+    try {
+      let sessionId = activeSessionId;
+      if (!sessionId) {
+        const created = await createChatSession(q.slice(0, 40), token);
+        setSessions((prev) => [created, ...prev]);
+        skipNextLoadRef.current = true;
+        setActiveSessionId(created.id);
+        sessionId = created.id;
       }
-
-      setMessages((prev) => [...prev, botResponse]);
+      const pair = await sendChatMessage(
+        sessionId,
+        { text: q, applicationId: selectedAppId, lang: language === 'ar' ? 'ar' : 'en' },
+        token
+      );
+      setMessages((prev) => [...prev.filter((m) => m.id !== tempId), ...pair]);
+    } catch (err: any) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setInputQuestion(q);
+      setChatError(err.message || (language === 'ar' ? 'تعذّر إرسال السؤال، حاول مرة أخرى.' : 'Could not send your question, please try again.'));
+    } finally {
       setIsTyping(false);
-    }, 1000);
+    }
   };
 
   return (
