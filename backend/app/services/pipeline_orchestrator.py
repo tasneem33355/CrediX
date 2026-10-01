@@ -57,56 +57,114 @@ async def ingest_ocr_and_create_application(
     year = datetime.utcnow().year
     app_id = f"APP-{year}-{new_id('').replace('_', '').upper()[:8]}"
 
-    # Map status & initial fraud risk based on validation findings
+    # Initial status comes from deterministic validation findings only.
+    # No fraud or credit score is invented here: the scoring step produces them.
     has_critical_discrepancy = any(w.get("code") == "CRITICAL_INCOME_DISCREPANCY" for w in warnings)
-    has_identity_mismatch = any(w.get("code") in {"NID_CROSS_MISMATCH", "NAME_CROSS_MISMATCH"} for w in warnings)
+    initial_status = "suspicious" if has_critical_discrepancy else "under_review"
 
-    if has_critical_discrepancy:
-        initial_status = "suspicious"
-        fraud_risk_score = 78
-        fraud_risk_category = "high"
-        fraud_risk_label = "مرتفع"
-        fraud_risk_label_en = "High"
-    elif has_identity_mismatch or not is_consistent:
-        initial_status = "under_review"
-        fraud_risk_score = 55
-        fraud_risk_category = "medium"
-        fraud_risk_label = "متوسط"
-        fraud_risk_label_en = "Medium"
-    else:
-        initial_status = "under_review"
-        fraud_risk_score = 15
-        fraud_risk_category = "low"
-        fraud_risk_label = "منخفض"
-        fraud_risk_label_en = "Low"
+    # Validation findings that are surfaced as fraud signals (shape matches FraudSignal schema)
+    signal_ctx = {
+        "CRITICAL_INCOME_DISCREPANCY": (
+            "شهادة الراتب وكشف الحساب", "Salary certificate & bank statement",
+            "مطابقة الدخل المعلن مع كشف الحساب ومستندات إضافية", "Reconcile declared income with the bank statement and extra documents",
+        ),
+        "NID_CROSS_MISMATCH": (
+            "بطاقة الرقم القومي وتقرير الآي سكور", "National ID & I-Score report",
+            "مراجعة المستندات الأصلية يدوياً", "Manually review the original documents",
+        ),
+        "NAME_CROSS_MISMATCH": (
+            "بطاقة الرقم القومي وتقرير الآي سكور", "National ID & I-Score report",
+            "مراجعة المستندات الأصلية يدوياً", "Manually review the original documents",
+        ),
+        "TAMPERING_SUSPECTED": (
+            "المستندات المرفوعة", "Uploaded documents",
+            "إحالة الطلب للتحقيق قبل أي قرار", "Escalate for investigation before any decision",
+        ),
+    }
+    sev_labels = {"high": ("مرتفع", "High"), "medium": ("متوسط", "Medium"), "low": ("منخفض", "Low")}
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
 
-    # Convert warnings into initial fraud signals
     fraud_signals = []
     for w in warnings:
         code = w.get("code")
-        if code in {"CRITICAL_INCOME_DISCREPANCY", "NID_CROSS_MISMATCH", "NAME_CROSS_MISMATCH", "TAMPERING_SUSPECTED"}:
-            fraud_signals.append({
-                "code": code,
-                "severity": w.get("severity", "high"),
-                "title": w.get("message", ""),
-                "titleEn": w.get("message_en", ""),
-                "evidence": w.get("message", ""),
-                "evidenceEn": w.get("message_en", ""),
-            })
+        if code not in signal_ctx:
+            continue
+        raw_sev = str(w.get("severity") or "medium").lower()
+        severity = "high" if raw_sev in {"critical", "high"} else "low" if raw_sev == "low" else "medium"
+        doc_ar, doc_en, act_ar, act_en = signal_ctx[code]
+        signal = {
+            "id": f"sig_{code.lower()}",
+            "code": code,
+            "title": w.get("message") or code,
+            "titleEn": w.get("message_en") or code,
+            "severity": severity,
+            "severityLabel": sev_labels[severity][0],
+            "severityLabelEn": sev_labels[severity][1],
+            "confidence": None,
+            "evidence": w.get("message") or "",
+            "evidenceEn": w.get("message_en") or "",
+            "relatedDocument": doc_ar,
+            "relatedDocumentEn": doc_en,
+            "timestamp": now_str,
+            "recommendedAction": act_ar,
+            "recommendedActionEn": act_en,
+        }
+        if code == "CRITICAL_INCOME_DISCREPANCY":
+            if profile.get("declared_net_salary") is not None:
+                signal["declaredValue"] = f"{profile['declared_net_salary']:,.2f} ج.م"
+            if profile.get("avg_monthly_net_inflow") is not None:
+                signal["actualValue"] = f"{profile['avg_monthly_net_inflow']:,.2f} ج.م"
+        fraud_signals.append(signal)
 
-    # Bank summary record
-    bank_fields = ocr_payload.get("bank_statement_fields") or {}
+    def _ocr_value(section: str, key: str):
+        raw = (ocr_payload.get(section) or {}).get(key)
+        return raw.get("value") if isinstance(raw, dict) else raw
+
+    # Extracted fields: only values the OCR actually returned, with its own confidence.
+    def _field(label, label_en, section, key, fmt=None):
+        raw = (ocr_payload.get(section) or {}).get(key)
+        value = raw.get("value") if isinstance(raw, dict) else raw
+        if value in (None, ""):
+            return None
+        confidence = raw.get("confidence") if isinstance(raw, dict) else None
+        return {
+            "label": label,
+            "labelEn": label_en,
+            "value": fmt(value) if fmt else str(value),
+            "confidence": round(float(confidence) * 100, 1) if confidence is not None else 0.0,
+        }
+
+    money = lambda v: f"{float(v):,.2f} ج.م"
+    extracted_fields = [
+        f for f in (
+            _field("جهة العمل", "Employer", "salary_certificate_fields", "employer_name"),
+            _field("المسمى الوظيفي", "Job Title", "salary_certificate_fields", "job_title"),
+            _field("الراتب المعلن", "Declared Net Salary", "salary_certificate_fields", "declared_net_salary", money),
+            _field("التدفق البنكي الشهري", "Avg Monthly Net Inflow", "bank_statement_fields", "avg_monthly_net_inflow", money),
+            _field("المحافظة", "Governorate", "national_id_fields", "governorate"),
+        )
+        if f is not None
+    ]
+
+    # Bank summary: keys match the BankStatementSummary schema; unknown totals stay absent.
+    period = _ocr_value("bank_statement_fields", "statement_period_months")
     bank_summary = {
-        "bank_name": profile.get("bank_name") or "غير محدد",
-        "avg_monthly_net_inflow": profile.get("avg_monthly_net_inflow"),
+        "bank_name": profile.get("bank_name"),
+        "monthly_average": profile.get("avg_monthly_net_inflow"),
+        "average_balance": _ocr_value("bank_statement_fields", "avg_monthly_balance"),
+        "period_months": int(period) if period is not None else None,
+        "income_regularity_score": _ocr_value("bank_statement_fields", "income_regularity_score"),
         "declared_net_salary": profile.get("declared_net_salary"),
-        "statement_period_months": (bank_fields.get("statement_period_months") or {}).get("value")
-        if isinstance(bank_fields.get("statement_period_months"), dict)
-        else bank_fields.get("statement_period_months"),
-        "income_regularity_score": (bank_fields.get("income_regularity_score") or {}).get("value")
-        if isinstance(bank_fields.get("income_regularity_score"), dict)
-        else bank_fields.get("income_regularity_score"),
     }
+    bank_summary = {k: v for k, v in bank_summary.items() if v is not None}
+
+    # OCR accuracy = mean document quality reported by the OCR service
+    qualities = [
+        d.get("overall_quality_score")
+        for d in (ocr_payload.get("documents") or [])
+        if isinstance(d.get("overall_quality_score"), (int, float))
+    ]
+    ocr_accuracy = round(sum(qualities) / len(qualities) * 100, 1) if qualities else None
 
     # 3. Create LoanApplication
     app = LoanApplication(
@@ -115,7 +173,7 @@ async def ingest_ocr_and_create_application(
         applicant_name=profile.get("applicant_name") or "عميل غير معروف",
         applicant_name_en=profile.get("applicant_name") or "Applicant",
         national_id=profile.get("national_id") or "00000000000000",
-        mobile_number="01000000000",
+        mobile_number="",
         client_type="new",
         occupation=f"{profile.get('job_title') or ''} - {profile.get('employer') or ''}".strip(" -"),
         loan_type=loan_type,
@@ -126,20 +184,10 @@ async def ingest_ocr_and_create_application(
         purpose=purpose or "طلب تمويل مستند إلى بيانات الاستخراج الآلي",
         status=initial_status,
         submitted_at=datetime.utcnow(),
-        ocr_accuracy=95.0,
+        ocr_accuracy=ocr_accuracy,
         extracted_from_doc_count=len(ocr_payload.get("documents") or []),
-        extracted_fields=[
-            {"label": "جهة العمل", "value": profile.get("employer")},
-            {"label": "المسمى الوظيفي", "value": profile.get("job_title")},
-            {"label": "الراتب المعلن", "value": f"{profile.get('declared_net_salary') or 0:,.2f} ج.م"},
-            {"label": "التدفق البنكي الشهري", "value": f"{profile.get('avg_monthly_net_inflow') or 0:,.2f} ج.م"},
-            {"label": "المحافظة", "value": profile.get("governorate")},
-        ],
+        extracted_fields=extracted_fields,
         bank_summary=bank_summary,
-        fraud_risk_score=fraud_risk_score,
-        fraud_risk_category=fraud_risk_category,
-        fraud_risk_label=fraud_risk_label,
-        fraud_risk_label_en=fraud_risk_label_en,
         analyzed_signals_count=len(fraud_signals),
         fraud_signals=fraud_signals,
         pipeline_completed_steps=2,
