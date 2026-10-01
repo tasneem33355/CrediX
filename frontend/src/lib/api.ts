@@ -115,6 +115,29 @@ export async function fetchAuditTrail(appId: string, token?: string) {
   return res.json();
 }
 
+export interface FraudCase {
+  id: string;
+  clientName: string;
+  clientNameEn: string;
+  initial: string;
+  type: string;
+  typeEn: string;
+  severity: string;
+  severityLabel: string;
+  severityLabelEn: string;
+  confidence: number | null;
+  mismatch: string;
+  mismatchEn: string;
+}
+
+export async function fetchFraudCases(token?: string): Promise<FraudCase[]> {
+  const res = await fetch(`${API_BASE}/fraud/cases`, { headers: getHeaders(token) });
+  if (!res.ok) {
+    throw new Error(`Failed to load fraud cases (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function fetchExtractions(appId: string, token?: string) {
   const res = await fetch(`${API_BASE}/ocr/applications/${appId}/extractions`, {
     headers: getHeaders(token),
