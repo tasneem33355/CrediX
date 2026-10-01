@@ -208,19 +208,9 @@ export default function AIAssistantPage() {
                 size="sm"
                 className="w-full shrink-0 mt-1"
                 onClick={() => {
-                  const newId = `sess_${Date.now()}`;
-                  setSessions([
-                    {
-                      id: newId,
-                      title: 'محادثة تحليل جديدة',
-                      titleEn: 'New Analysis Chat',
-                      timeAgo: 'الآن',
-                      timeAgoEn: 'Just now',
-                    },
-                    ...sessions,
-                  ]);
-                  setActiveSessionId(newId);
+                  setActiveSessionId(null);
                   setMessages([]);
+                  setChatError(null);
                 }}
               >
                 + {language === 'ar' ? 'محادثة جديدة' : 'New Chat'}
@@ -265,9 +255,29 @@ export default function AIAssistantPage() {
                 </div>
               </div>
             </div>
-
+            {/* Application the questions are about */}
+            <div className="px-4 sm:px-6 py-2.5 border-b border-border bg-surface shrink-0">
+              <Select
+                label={language === 'ar' ? 'الطلب محل السؤال' : 'Application to ask about'}
+                value={selectedAppId}
+                onChange={(e) => setSelectedAppId(e.target.value)}
+                options={
+                  apps.length > 0
+                    ? apps.map((a) => ({ value: a.id, label: language === 'ar' ? a.name : a.nameEn }))
+                    : [{ value: '', label: language === 'ar' ? 'لا توجد طلبات' : 'No applications' }]
+                }
+              />
+            </div>
+            
             {/* Chat Messages Stream */}
             <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 text-xs min-h-0">
+              {messages.length === 0 && !isTyping && (
+                <p className="text-center text-text-muted pt-10">
+                  {language === 'ar'
+                    ? 'اختر الطلب من الأعلى ثم اكتب سؤالك، والمساعد يجيب من بيانات الطلب الفعلية.'
+                    : 'Pick an application above and ask your question. Answers come from the real application data.'}
+                </p>
+              )}              
               {messages.map((msg) => {
                 const isUser = msg.sender === 'user';
                 return (
@@ -344,7 +354,7 @@ export default function AIAssistantPage() {
                     <Bot className="w-4 h-4 animate-spin" />
                   </div>
                   <div className="p-3 bg-surface-subtle rounded-2xl text-xs text-text-secondary">
-                    {language === 'ar' ? 'جاري استرجاع البيانات وتحليل المستندات بالـ RAG...' : 'Retrieving data and analyzing documents via RAG...'}
+                    {language === 'ar' ? 'جاري تحليل بيانات الطلب...' : 'Analyzing the application data...'}
                   </div>
                 </div>
               )}
@@ -353,6 +363,11 @@ export default function AIAssistantPage() {
 
             {/* Prompt Suggestion Chips & Input */}
             <div className="p-3 sm:p-4 border-t border-border space-y-2.5 bg-surface shrink-0">
+              {chatError && (
+                <div className="p-2.5 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-[11px]">
+                  {chatError}
+                </div>
+              )}              
               {/* Chips */}
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
                 <button
