@@ -184,17 +184,18 @@ export default function ApplicationDetailPage() {
     }
   };
 
-  // Micro-Analytics calculations
-  const declaredSalary = 22880.0;
-  const verifiedBankInflow = 2998.5;
-  const requestedLoan = application.requestedAmount || 100000;
-  const tenureMonths = 36;
-  const baseMonthlyInstallment = Math.round((requestedLoan / tenureMonths) * 1.18); // Approx installment with interest
-  const dbrDeclared = ((baseMonthlyInstallment / declaredSalary) * 100).toFixed(1);
-  const dbrVerified = ((baseMonthlyInstallment / verifiedBankInflow) * 100).toFixed(1);
-  const applicantPd = 0.0524; // 5.24% from Credit Risk model
-  const portfolioAvgPd = 0.0482; // 4.82% from Portfolio Analytics
-  const applicantEcl = Math.round(requestedLoan * applicantPd * 0.45); // PD * LGD (45%)
+  // Dynamic Micro-Analytics calculations from live application & bank summary
+  const bankSummary = (application as any).bankSummary || (application as any).bank_summary || {};
+  const declaredSalary = Number(bankSummary.declared_net_salary) || 22880.0;
+  const verifiedBankInflow = Number(bankSummary.monthly_average) || 2998.5;
+  const requestedLoan = Number(application.requestedAmount) || 100000;
+  const tenureMonths = Number(application.tenureMonths) || 36;
+  const baseMonthlyInstallment = Math.round((requestedLoan / tenureMonths) * 1.18);
+  const dbrDeclared = declaredSalary > 0 ? ((baseMonthlyInstallment / declaredSalary) * 100).toFixed(1) : '—';
+  const dbrVerified = verifiedBankInflow > 0 ? ((baseMonthlyInstallment / verifiedBankInflow) * 100).toFixed(1) : '—';
+  const applicantPd = (application as any).pdProbability ? Number((application as any).pdProbability) : 0.0524;
+  const portfolioAvgPd = 0.0482;
+  const applicantEcl = Math.round(requestedLoan * applicantPd * 0.45);
 
   return (
     <AppLayout
@@ -334,7 +335,7 @@ export default function ApplicationDetailPage() {
             {/* AI Recommendation Widget */}
             <div
               className={`p-4 rounded-2xl border text-start min-w-[250px] ${
-                application.status === 'suspicious' || application.fraudRiskScore >= 70
+                application.status === 'suspicious' || (application.fraudRiskScore && application.fraudRiskScore >= 70)
                   ? 'bg-semantic-warning-subtle border-semantic-warning/40'
                   : 'bg-[#E8EEF5] border-brand-navy/20'
               }`}
@@ -344,19 +345,26 @@ export default function ApplicationDetailPage() {
                   {t('application.recommendation')}
                 </span>
                 <span className="text-xs font-bold text-brand-navy">
-                  {t('application.confidence')} {application.aiConfidence || 88}%
+                  {application.aiConfidence
+                    ? `${t('application.confidence')} ${application.aiConfidence}%`
+                    : (language === 'ar' ? 'بانتظار التقييم' : 'Pending Score')}
                 </span>
               </div>
               <p className="text-sm font-bold text-brand-navy flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-semantic-warning" />
+                {application.status === 'suspicious' ? (
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-semantic-warning" />
+                ) : application.creditScore ? (
+                  <Sparkles className="w-4 h-4 shrink-0 text-brand-navy" />
+                ) : (
+                  <Clock className="w-4 h-4 shrink-0 text-text-muted" />
+                )}
                 <span>
                   {language === 'ar'
-                    ? application.aiRecommendationLabel || 'مراجعة بشرية (لتناقض الدخل)'
-                    : application.aiRecommendationLabelEn || 'Manual Review (Income Discrepancy)'}
+                    ? application.aiRecommendationLabel || (application.status === 'suspicious' ? 'مراجعة بشرية (لتناقض الدخل)' : 'قيد المراجعة والتدقيق')
+                    : application.aiRecommendationLabelEn || (application.status === 'suspicious' ? 'Manual Review (Discrepancy)' : 'Under Review')}
                 </span>
               </p>
             </div>
-          </div>
 
           {/* Explainability Dropdown */}
           <div className="mt-5 pt-4 border-t border-border">
@@ -462,42 +470,52 @@ export default function ApplicationDetailPage() {
                     <span className="text-[11px] text-text-muted font-medium">
                       {language === 'ar' ? 'الاسم الكامل (بطاقة الرقم القومي)' : 'Full Name (National ID)'}
                     </span>
-                    <p className="text-sm font-bold text-text-primary">كريم حمدى على احمد</p>
+                    <p className="text-sm font-bold text-text-primary">
+                      {language === 'ar' ? application.applicantName : (application.applicantNameEn || application.applicantName)}
+                    </p>
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-surface-subtle border border-border space-y-1 text-start">
                     <span className="text-[11px] text-text-muted font-medium">
                       {language === 'ar' ? 'الرقم القومي المستخرج' : 'Extracted National ID'}
                     </span>
-                    <p className="text-sm font-bold text-text-primary">30306052103394</p>
+                    <p className="text-sm font-bold text-text-primary font-mono">{application.nationalId || '—'}</p>
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-surface-subtle border border-border space-y-1 text-start">
                     <span className="text-[11px] text-text-muted font-medium">
-                      {language === 'ar' ? 'جهة العمل (شهادة الراتب)' : 'Employer (Salary Certificate)'}
+                      {language === 'ar' ? 'جهة العمل والمهنة' : 'Occupation / Employer'}
                     </span>
-                    <p className="text-sm font-bold text-text-primary">Careem Deliveries LLC</p>
+                    <p className="text-sm font-bold text-text-primary">
+                      {language === 'ar' ? (application.occupation || '—') : (application.occupationEn || application.occupation || '—')}
+                    </p>
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-surface-subtle border border-border space-y-1 text-start">
                     <span className="text-[11px] text-text-muted font-medium">
-                      {language === 'ar' ? 'المسمى الوظيفي' : 'Job Title'}
+                      {language === 'ar' ? 'البنك المصدر لكشف الحساب' : 'Issuing Bank'}
                     </span>
-                    <p className="text-sm font-bold text-text-primary">Senior Care Ops Team Lead</p>
+                    <p className="text-sm font-bold text-text-primary">
+                      {bankSummary.bank_name || (language === 'ar' ? 'بنك المشرق' : 'Mashreq Bank')}
+                    </p>
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-semantic-warning-subtle/30 border border-semantic-warning/30 space-y-1 text-start">
                     <span className="text-[11px] text-semantic-warning font-bold">
                       {language === 'ar' ? 'صافي الراتب المعلن بالشهادة' : 'Declared Net Salary'}
                     </span>
-                    <p className="text-sm font-bold text-brand-navy">22,880.00 ج.م</p>
+                    <p className="text-sm font-bold text-brand-navy">
+                      {bankSummary.declared_net_salary ? `${Number(bankSummary.declared_net_salary).toLocaleString()} ج.م` : '22,880.00 ج.م'}
+                    </p>
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-semantic-error-subtle/30 border border-semantic-error/30 space-y-1 text-start">
                     <span className="text-[11px] text-semantic-error font-bold">
                       {language === 'ar' ? 'متوسط التدفق البنكي الفعلي' : 'Average Bank Net Inflow'}
                     </span>
-                    <p className="text-sm font-bold text-semantic-error">2,998.50 ج.م</p>
+                    <p className="text-sm font-bold text-semantic-error">
+                      {bankSummary.monthly_average ? `${Number(bankSummary.monthly_average).toLocaleString()} ج.م` : '2,998.50 ج.م'}
+                    </p>
                   </div>
                 </div>
               </Card>
@@ -510,7 +528,7 @@ export default function ApplicationDetailPage() {
                     <CreditCard className="w-5 h-5 text-brand-navy" />
                   </div>
                   <p className="text-xs text-text-muted mt-0.5">
-                    {language === 'ar' ? 'بنك المشرق • كشف 5 أشهر' : 'Mashreq Bank • 5-Month Statement'}
+                    {bankSummary.bank_name || 'بنك المشرق'} • {language === 'ar' ? `كشف ${bankSummary.period_months || 5} أشهر` : `${bankSummary.period_months || 5}-Month Statement`}
                   </p>
                 </div>
 
@@ -518,17 +536,21 @@ export default function ApplicationDetailPage() {
                   <div className="space-y-1">
                     <p className="text-xs text-text-muted">{t('bank.averageBalance')}</p>
                     <p className="text-3xl font-extrabold text-text-primary">
-                      {formatCurrency(1635.1)}
+                      {bankSummary.average_balance ? formatCurrency(Number(bankSummary.average_balance)) : formatCurrency(1635.1)}
                     </p>
                     <p className="text-xs text-text-secondary font-medium">
-                      {language === 'ar' ? 'الحد الأدنى: 734.95 ج.م • الأقصى: 4,089.95 ج.م' : 'Min: 734.95 EGP • Max: 4,089.95 EGP'}
+                      {language === 'ar' 
+                        ? `الفترة المشمولة: ${bankSummary.period_months || 5} أشهر` 
+                        : `Covered period: ${bankSummary.period_months || 5} months`}
                     </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
                     <div>
                       <p className="text-[11px] text-text-muted">{language === 'ar' ? 'انتظام الدخل' : 'Income Regularity'}</p>
-                      <p className="text-sm font-bold text-semantic-success mt-0.5">88.1% (منتظم)</p>
+                      <p className="text-sm font-bold text-semantic-success mt-0.5">
+                        {bankSummary.income_regularity_score ? `${bankSummary.income_regularity_score}%` : '88.1%'}
+                      </p>
                     </div>
                     <div>
                       <p className="text-[11px] text-text-muted">{language === 'ar' ? 'شيكات مرتجعة' : 'Bounced Cheques'}</p>
@@ -552,18 +574,32 @@ export default function ApplicationDetailPage() {
               </p>
 
               <div className="py-4">
-                <CircularScoreGauge
-                  score={application.creditScore || 780}
-                  maxScore={850}
-                  label={language === 'ar' ? 'جدارة منخفضة المخاطر (Grade B)' : 'Grade B (Low Risk)'}
-                  sublabel={language === 'ar' ? 'احتمالية التعثر PD: 5.24%' : 'Default Probability PD: 5.24%'}
-                  size="lg"
-                />
+                {application.creditScore ? (
+                  <CircularScoreGauge
+                    score={application.creditScore}
+                    maxScore={850}
+                    label={(application as any).ratingGrade || (language === 'ar' ? 'جدارة منخفضة المخاطر (Grade B)' : 'Grade B (Low Risk)')}
+                    sublabel={`PD: ${((applicantPd) * 100).toFixed(2)}%`}
+                    size="lg"
+                  />
+                ) : (
+                  <div className="p-6 text-center space-y-2 bg-surface-subtle rounded-2xl border border-dashed border-border">
+                    <Sparkles className="w-8 h-8 text-brand-navy mx-auto opacity-50" />
+                    <p className="text-xs font-semibold text-text-primary">
+                      {language === 'ar' ? 'لم يتم تقييم الجدارة بعد' : 'Not Scored Yet'}
+                    </p>
+                    <p className="text-[10px] text-text-muted">
+                      {language === 'ar' ? 'اضغط على زر تشغيل التقييم الذكي بالأعلى' : 'Click Run AI Scoring above'}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="w-full pt-4 border-t border-border text-xs text-text-secondary flex justify-between">
                 <span>{language === 'ar' ? 'قرار النموذج التلقائي:' : 'Model Auto Decision:'}</span>
-                <span className="font-bold text-semantic-success">AUTO-APPROVE</span>
+                <span className="font-bold text-semantic-success">
+                  {application.creditScore ? (application.aiRecommendation || 'AUTO-APPROVE') : '—'}
+                </span>
               </div>
             </Card>
 
@@ -817,16 +853,24 @@ export default function ApplicationDetailPage() {
                   <h3 className="text-base font-bold text-text-primary">{t('fraud.scoreTitle')}</h3>
                   <p className="text-xs text-text-muted">{t('fraud.analyzedSignals')}</p>
                 </div>
-                <Badge variant="danger" dot>
-                  {language === 'ar' ? 'مخاطر احتيال مرتفعة (78%)' : 'High Fraud Risk (78%)'}
+                <Badge variant={application.fraudRiskScore && application.fraudRiskScore >= 60 ? 'danger' : 'neutral'} dot>
+                  {application.fraudRiskScore
+                    ? `${language === 'ar' ? 'مخاطر احتيال' : 'Fraud Risk'} (${application.fraudRiskScore}%)`
+                    : (language === 'ar' ? 'بانتظار الفحص' : 'Pending')}
                 </Badge>
               </div>
 
-              <LinearFraudRiskBar
-                score={application.fraudRiskScore || 78}
-                label={language === 'ar' ? 'مخاطر مرتفعة' : 'High Risk'}
-                sublabel={language === 'ar' ? 'تنبيه: يتطلب فحص امتثال وتدقيق بشري' : 'Compliance inspection required'}
-              />
+              {application.fraudRiskScore !== undefined && application.fraudRiskScore !== null ? (
+                <LinearFraudRiskBar
+                  score={application.fraudRiskScore}
+                  label={application.fraudRiskScore >= 70 ? (language === 'ar' ? 'مخاطر مرتفعة' : 'High Risk') : (language === 'ar' ? 'مخاطر منخفضة' : 'Low Risk')}
+                  sublabel={language === 'ar' ? 'تنبيه: يتطلب فحص امتثال وتدقيق بشري' : 'Compliance inspection required'}
+                />
+              ) : (
+                <p className="text-xs text-text-muted">
+                  {language === 'ar' ? 'لم يتم احتساب درجة الاحتيال بعد — سيتم توليدها تلقائياً عند تشغيل بايبلاين الفحص.' : 'Fraud risk score pending pipeline execution.'}
+                </p>
+              )}
             </Card>
 
             {/* Signals List */}
@@ -837,64 +881,71 @@ export default function ApplicationDetailPage() {
               </div>
 
               <div className="space-y-3">
-                {/* Signal 1: Critical Income Discrepancy */}
-                <div className="rounded-2xl border border-semantic-error/40 bg-semantic-error-subtle/30 overflow-hidden">
-                  <div className="p-4 flex items-center justify-between text-start">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-semantic-error-subtle text-semantic-error flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-4 h-4" />
+                {(application.fraudSignals && application.fraudSignals.length > 0) ? (
+                  application.fraudSignals.map((signal: any, idx: number) => {
+                    const isHigh = signal.severity === 'high' || signal.severity === 'critical';
+                    return (
+                      <div
+                        key={signal.id || idx}
+                        className={`rounded-2xl border overflow-hidden ${
+                          isHigh
+                            ? 'border-semantic-error/40 bg-semantic-error-subtle/30'
+                            : 'border-semantic-warning/40 bg-semantic-warning-subtle/30'
+                        }`}
+                      >
+                        <div className="p-4 flex items-center justify-between text-start">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                isHigh ? 'bg-semantic-error-subtle text-semantic-error' : 'bg-semantic-warning-subtle text-semantic-warning'
+                              }`}
+                            >
+                              <AlertTriangle className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-text-primary">
+                                {language === 'ar' ? signal.title : (signal.titleEn || signal.title)}
+                              </p>
+                              <p className="text-[11px] text-text-muted mt-0.5">
+                                {language === 'ar' ? (signal.relatedDocument || 'محرك التدقيق الآلي') : (signal.relatedDocumentEn || 'Automated Audit')}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                                isHigh ? 'bg-semantic-error-subtle text-semantic-error' : 'bg-semantic-warning-subtle text-semantic-warning'
+                              }`}
+                            >
+                              {language === 'ar' ? (signal.severityLabel || 'تنبيه') : (signal.severityLabelEn || 'Alert')}
+                            </span>
+                            {signal.confidence && (
+                              <span className="text-xs text-text-muted font-mono">{signal.confidence}%</span>
+                            )}
+                          </div>
+                        </div>
+                        {signal.evidence && (
+                          <div className="px-5 pb-4 pt-1 border-t border-border/40 text-xs space-y-2">
+                            <p className="text-text-secondary leading-relaxed">
+                              <strong>{language === 'ar' ? 'الدليل: ' : 'Evidence: '}</strong>
+                              {language === 'ar' ? signal.evidence : (signal.evidenceEn || signal.evidence)}
+                            </p>
+                            {signal.recommendedAction && (
+                              <p className="text-semantic-success font-semibold">
+                                <strong>{language === 'ar' ? 'الإجراء الموصى به: ' : 'Recommended Action: '}</strong>
+                                {language === 'ar' ? signal.recommendedAction : (signal.recommendedActionEn || signal.recommendedAction)}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <p className="text-xs font-bold text-text-primary">
-                          تناقض حاد في بيانات الدخل (شهادة الراتب vs كشف الحساب البنكي)
-                        </p>
-                        <p className="text-[11px] text-text-muted mt-0.5">محرك التدقيق الآلي والـ OCR</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-semantic-error-subtle text-semantic-error">
-                        حرج (Critical)
-                      </span>
-                      <span className="text-xs text-text-muted font-mono">98% دقة</span>
-                    </div>
+                    );
+                  })
+                ) : (
+                  <div className="p-8 text-center text-xs text-text-muted bg-surface-subtle rounded-2xl border border-dashed border-border">
+                    {language === 'ar' ? 'لم يتم رصد أي إشارات احتيال أو تضارب في هذا الطلب.' : 'No fraud or mismatch signals detected.'}
                   </div>
-                  <div className="px-5 pb-4 pt-1 border-t border-semantic-error/20 text-xs space-y-2">
-                    <p className="text-text-secondary leading-relaxed">
-                      <strong>الدليل: </strong> صافي الراتب المعلن بالشهادة (22,880.00 ج.م) يفوق متوسط التدفق البنكي الشهري (2,998.50 ج.م) بـ 7.63 أضعاف. التدفق البنكي يمثل 13.1% فقط من الراتب المعلن.
-                    </p>
-                    <p className="text-semantic-success font-semibold">
-                      <strong>الإجراء الموصى به: </strong> طلب كشف حساب رسمي ومختوم عن آخر 6 أشهر يوضح إيداع الرواتب من جهة العمل (Careem Deliveries).
-                    </p>
-                  </div>
-                </div>
-
-                {/* Signal 2: Identity Mismatch */}
-                <div className="rounded-2xl border border-semantic-warning/40 bg-semantic-warning-subtle/30 overflow-hidden">
-                  <div className="p-4 flex items-center justify-between text-start">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-semantic-warning-subtle text-semantic-warning flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-text-primary">
-                          عدم تطابق في صياغة الاسم والرقم القومي مع سجل الآي سكور
-                        </p>
-                        <p className="text-[11px] text-text-muted mt-0.5">مطابقة الهوية الرقمية</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-semantic-warning-subtle text-semantic-warning">
-                        متوسط (Medium)
-                      </span>
-                      <span className="text-xs text-text-muted font-mono">95% دقة</span>
-                    </div>
-                  </div>
-                  <div className="px-5 pb-4 pt-1 border-t border-semantic-warning/20 text-xs space-y-2">
-                    <p className="text-text-secondary leading-relaxed">
-                      <strong>الدليل: </strong> تباين طفيف في صياغة الاسم الثلاثي في تقرير I-Score مقارنة ببطاقة الهوية الوطنية.
-                    </p>
-                  </div>
-                </div>
+                )}
               </div>
             </Card>
           </div>
