@@ -56,6 +56,10 @@ import {
   fetchDashboardStats,
   fetchDashboardTrends,
   fetchApplicationsList,
+  type PortfolioKpis,
+  type PortfolioConcentration,
+  type PortfolioDrift,
+  type StressTestResult,
 } from '@/lib/api';
 
 // Custom Theme-Adaptive Tooltip for Recharts
@@ -137,79 +141,100 @@ export default function DashboardPage() {
     ? 'محمد سامي'
     : 'Mohamed Sami';
 
-  // Macro Portfolio Analytics State
-  const [portfolioKpis, setPortfolioKpis] = useState({
-    total_loans_count: 500,
-    total_portfolio_volume: 48250000.0,
-    average_loan_size: 96500.0,
-    npl_ratio: 0.058,
-    performing_loans_count: 471,
-    npl_loans_count: 29,
-  });
+  // Portfolio analytics (computed by the backend from the database)
+  const [kpisData, setKpisData] = useState<PortfolioKpis | null>(null);
+  const [concentrationData, setConcentrationData] = useState<PortfolioConcentration | null>(null);
+  const [driftData, setDriftData] = useState<PortfolioDrift | null>(null);
+  const [stressData, setStressData] = useState<StressTestResult | null>(null);
 
-  const [portfolioConcentration, setPortfolioConcentration] = useState({
-    by_product: { CASH_LOAN: 280, CAR_LOAN: 110, CREDIT_CARD: 45 },
-    by_status: { ACTIVE_PERFORMING: 450, CLOSED_PAID_OFF: 21, DEFAULTED_NPL: 29 },
-  });
-
-  const [portfolioDrift, setPortfolioDrift] = useState({
-    system_health: 'HEALTHY',
-    retraining_recommended: false,
-    max_psi_feature: 'dti_ratio',
-    max_psi_score: 0.041,
-    cbe_audit_comment: 'Feature distributions fully stable and compliant with baseline.',
-  });
-
-  // Stress test simulator state
+  // Stress test simulator controls
   const [pdMultiplier, setPdMultiplier] = useState(2.0);
   const [lgdMultiplier, setLgdMultiplier] = useState(1.3);
-  const [stressResult, setStressResult] = useState({
-    stressed_ecl: 214650.0,
-    ecl_delta: 12150.0,
-    stressed_pd: 0.0477,
-    sensitivity_curve: [
-      { rate_hike_bps: 0, stressed_pd: 0.0464, stressed_ecl: 208575.0 },
-      { rate_hike_bps: 100, stressed_pd: 0.0466, stressed_ecl: 209790.0 },
-      { rate_hike_bps: 200, stressed_pd: 0.0469, stressed_ecl: 211005.0 },
-      { rate_hike_bps: 300, stressed_pd: 0.0472, stressed_ecl: 212220.0 },
-      { rate_hike_bps: 500, stressed_pd: 0.0477, stressed_ecl: 214650.0 },
-      { rate_hike_bps: 750, stressed_pd: 0.0484, stressed_ecl: 217687.5 },
-    ],
-  });
 
   useEffect(() => {
+    if (!token) return;
     let isMounted = true;
     async function loadPortfolioData() {
-      const [kpis, conc, drift] = await Promise.all([
-        fetchPortfolioKpis(),
-        fetchPortfolioConcentration(),
-        fetchPortfolioDrift(),
+      const [kpis, conc, drift, stress] = await Promise.all([
+        fetchPortfolioKpis(token),
+        fetchPortfolioConcentration(token),
+        fetchPortfolioDrift(token),
+        runPortfolioStressTest(2.0, 1.3, token),
       ]);
       if (isMounted) {
-        if (kpis) setPortfolioKpis(kpis);
-        if (conc) setPortfolioConcentration(conc);
-        if (drift) setPortfolioDrift(drift);
+        setKpisData(kpis);
+        setConcentrationData(conc);
+        setDriftData(drift);
+        setStressData(stress);
       }
     }
     loadPortfolioData();
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [token]);
 
   const handleRunStressSimulation = async (newPd: number, newLgd: number) => {
     setPdMultiplier(newPd);
     setLgdMultiplier(newLgd);
-    const res = await runPortfolioStressTest(newPd, newLgd);
-    if (res && res.scenario_results) {
-      setStressResult({
-        stressed_ecl: res.scenario_results.stressed_ecl,
-        ecl_delta: res.scenario_results.ecl_delta,
-        stressed_pd: res.scenario_results.stressed_pd,
-        sensitivity_curve: res.sensitivity_curve || stressResult.sensitivity_curve,
-      });
-    }
+    const res = await runPortfolioStressTest(newPd, newLgd, token);
+    if (res) setStressData(res);
   };
+
+  // Empty values (zeros) when the portfolio has no data; never invented figures.
+  const portfolioKpis: PortfolioKpis = kpisData ?? {
+    total_loans_count: 0,
+    total_portfolio_volume: 0,
+    average_loan_size: 0,
+    npl_ratio: 0,
+    performing_loans_count: 0,
+    npl_loans_count: 0,
+    has_data: false,
+    includes_demo_data: false,
+  };
+  const portfolioConcentration: PortfolioConcentration = concentrationData ?? {
+    by_product: {},
+    by_product_volume: {},
+    by_status: {},
+  };
+  const sr = stressData?.scenario_results;
+  const stressResult = {
+    stressed_ecl: sr?.stressed_ecl ?? 0,
+    ecl_delta: sr?.ecl_delta ?? 0,
+    stressed_pd: sr?.stressed_pd ?? 0,
+    baseline_ecl: sr?.baseline_ecl ?? 0,
+    baseline_pd: sr?.baseline_pd ?? 0,
+    sensitivity_curve: stressData?.sensitivity_curve ?? [],
+  };
+
+  const psiText = driftData?.max_psi_score != null ? driftData.max_psi_score.toFixed(3) : '-';
+  const driftBadges = {
+    HEALTHY: {
+      healthy: true,
+      className: 'bg-semantic-success-subtle border-semantic-success/30 text-semantic-success',
+      ar: `النموذج مستقر (PSI: ${psiText})`,
+      en: `Model Stable (PSI: ${psiText})`,
+    },
+    MONITOR: {
+      healthy: false,
+      className: 'bg-semantic-warning-subtle border-semantic-warning/30 text-semantic-warning',
+      ar: `النموذج يحتاج مراقبة (PSI: ${psiText})`,
+      en: `Model needs monitoring (PSI: ${psiText})`,
+    },
+    CRITICAL: {
+      healthy: false,
+      className: 'bg-semantic-error-subtle border-semantic-error/30 text-semantic-error',
+      ar: `انحراف حرج، يوصى بإعادة التدريب (PSI: ${psiText})`,
+      en: `Critical drift, retraining recommended (PSI: ${psiText})`,
+    },
+    INSUFFICIENT_DATA: {
+      healthy: false,
+      className: 'bg-surface-subtle border-border text-text-secondary',
+      ar: 'بيانات غير كافية لقياس انحراف النموذج',
+      en: 'Not enough data to measure model drift',
+    },
+  } as const;
+  const driftBadge = driftBadges[driftData?.system_health ?? 'INSUFFICIENT_DATA'];
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -235,9 +260,9 @@ export default function DashboardPage() {
 
   // Concentration product data for BarChart
   const concentrationChartData = [
-    { type: 'قروض نقدية', typeEn: 'Cash Loans', count: portfolioConcentration.by_product.CASH_LOAN },
-    { type: 'قروض سيارات', typeEn: 'Auto Loans', count: portfolioConcentration.by_product.CAR_LOAN },
-    { type: 'بطاقات ائتمان', typeEn: 'Credit Cards', count: portfolioConcentration.by_product.CREDIT_CARD },
+    { type: 'قروض نقدية', typeEn: 'Cash Loans', count: portfolioConcentration.by_product.CASH_LOAN ?? 0 },
+    { type: 'قروض سيارات', typeEn: 'Auto Loans', count: portfolioConcentration.by_product.CAR_LOAN ?? 0 },
+    { type: 'بطاقات ائتمان', typeEn: 'Credit Cards', count: portfolioConcentration.by_product.CREDIT_CARD ?? 0 },
   ];
 
   return (
@@ -261,13 +286,9 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-2.5 shrink-0">
             {/* Model Health Drift Badge */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-semantic-success-subtle border border-semantic-success/30 text-xs font-bold text-semantic-success">
-              <ShieldCheck className="w-4 h-4" />
-              <span>
-                {language === 'ar'
-                  ? `النموذج مستقر (PSI: ${portfolioDrift.max_psi_score})`
-                  : `Model Stable (PSI: ${portfolioDrift.max_psi_score})`}
-              </span>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${driftBadge.className}`}>
+              {driftBadge.healthy ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+              <span>{language === 'ar' ? driftBadge.ar : driftBadge.en}</span>
             </div>
 
             <Link href="/apply">
@@ -286,10 +307,6 @@ export default function DashboardPage() {
               <div className="w-10 h-10 rounded-xl bg-[#E8EEF5] text-brand-navy ring-1 ring-brand-navy/20 flex items-center justify-center transition-transform duration-normal group-hover:scale-105">
                 <Building className="w-5 h-5" aria-hidden="true" />
               </div>
-              <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-semantic-success bg-semantic-success-subtle px-2 py-0.5 rounded-md border border-semantic-success/20">
-                <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>+4.2%</span>
-              </span>
             </div>
             <div>
               <p className="text-xs font-medium text-text-secondary">
@@ -303,6 +320,11 @@ export default function DashboardPage() {
                   ? `${portfolioKpis.total_loans_count} تسهيل ائتماني مسجل`
                   : `${portfolioKpis.total_loans_count} registered facilities`}
               </p>
+              {portfolioKpis.includes_demo_data && (
+                <p className="text-[11px] text-semantic-warning font-medium mt-0.5">
+                  {language === 'ar' ? 'تتضمن بيانات تجريبية للعرض' : 'Includes demonstration data'}
+                </p>
+              )}
             </div>
           </Card>
 
@@ -337,10 +359,6 @@ export default function DashboardPage() {
               <div className="w-10 h-10 rounded-xl bg-semantic-success-subtle text-semantic-success ring-1 ring-semantic-success/20 flex items-center justify-center transition-transform duration-normal group-hover:scale-105">
                 <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
               </div>
-              <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-semantic-success bg-semantic-success-subtle px-2 py-0.5 rounded-md border border-semantic-success/20">
-                <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>+1.8%</span>
-              </span>
             </div>
             <div>
               <p className="text-xs font-medium text-text-secondary">
@@ -348,9 +366,6 @@ export default function DashboardPage() {
               </p>
               <p className="text-2xl sm:text-3xl font-extrabold text-text-primary tracking-tight mt-1">
                 {formatCurrency(portfolioKpis.average_loan_size)}
-              </p>
-              <p className="text-[11px] text-text-muted mt-1">
-                {language === 'ar' ? 'ضمن الحدود الآمنة للقطاع' : 'Within safe sector exposure bounds'}
               </p>
             </div>
           </Card>
@@ -361,10 +376,6 @@ export default function DashboardPage() {
               <div className="w-10 h-10 rounded-xl bg-semantic-error-subtle text-semantic-error ring-1 ring-semantic-error/20 flex items-center justify-center transition-transform duration-normal group-hover:scale-105">
                 <ShieldAlert className="w-5 h-5" aria-hidden="true" />
               </div>
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-semantic-error bg-semantic-error-subtle px-2 py-0.5 rounded-md border border-semantic-error/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-semantic-error animate-pulse" aria-hidden="true" />
-                <span>تناقض دخل</span>
-              </span>
             </div>
             <div>
               <p className="text-xs font-medium text-text-secondary">{t('dashboard.suspiciousFraud')}</p>
@@ -457,7 +468,9 @@ export default function DashboardPage() {
                 <p className="text-xl font-extrabold text-brand-navy tracking-tight">
                   {formatCurrency(stressResult.stressed_ecl)}
                 </p>
-                <span className="text-[10px] text-text-secondary">أساس: 202,500 ج.م</span>
+                <span className="text-[10px] text-text-secondary">
+                  {language === 'ar' ? 'الأساس' : 'Baseline'}: {formatCurrency(stressResult.baseline_ecl)}
+                </span>
               </div>
 
               <div className="p-4 rounded-xl bg-semantic-warning-subtle border border-semantic-warning/30 space-y-1">
@@ -473,7 +486,9 @@ export default function DashboardPage() {
                 <p className="text-xl font-extrabold text-text-primary tracking-tight">
                   {(stressResult.stressed_pd * 100).toFixed(2)}%
                 </p>
-                <span className="text-[10px] text-semantic-success font-medium">تغطية كفاية رأس المال: كافية</span>
+                <span className="text-[10px] text-text-secondary">
+                  {language === 'ar' ? 'الأساس' : 'Baseline'}: {(stressResult.baseline_pd * 100).toFixed(2)}%
+                </span>
               </div>
             </div>
           </div>
@@ -549,18 +564,12 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center text-xs pt-3 border-t border-border">
-              <div className="bg-surface-subtle p-2 rounded-xl border border-border">
-                <span className="font-bold text-brand-navy">280</span>
-                <p className="text-[10px] text-text-muted">نقدي</p>
-              </div>
-              <div className="bg-surface-subtle p-2 rounded-xl border border-border">
-                <span className="font-bold text-brand-navy">110</span>
-                <p className="text-[10px] text-text-muted">سيارات</p>
-              </div>
-              <div className="bg-surface-subtle p-2 rounded-xl border border-border">
-                <span className="font-bold text-brand-navy">45</span>
-                <p className="text-[10px] text-text-muted">بطاقات</p>
-              </div>
+              {concentrationChartData.map((p) => (
+                <div key={p.typeEn} className="bg-surface-subtle p-2 rounded-xl border border-border">
+                  <span className="font-bold text-brand-navy">{formatNumber(p.count)}</span>
+                  <p className="text-[10px] text-text-muted">{language === 'ar' ? p.type : p.typeEn}</p>
+                </div>
+              ))}
             </div>
           </Card>
         </div>
