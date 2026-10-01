@@ -126,7 +126,7 @@ def evaluate_gate(ocr_data: Dict[str, Any]) -> Dict[str, Any]:
             issues.append({
                 "document": key, "document_label": doc_ar, "document_label_en": doc_en,
                 "field": None, "severity": "high", "code": "DOCUMENT_TAMPERING_SUSPECTED",
-                "message": f"يوجد اشتباه في سلامة المستند ({doc_ar}). ارفعي نسخة أصلية واضحة غير معدّلة",
+                "message": f"يوجد اشتباه في سلامة المستند ({doc_ar}). يرجى رفع نسخة أصلية واضحة غير معدّلة",
                 "message_en": f"The document ({doc_en}) appears to be altered. Please upload a clear, original copy",
             })
 
