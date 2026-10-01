@@ -41,4 +41,5 @@ class OCRGateResponse(BaseModel):
     requires_acknowledgement: bool
     is_tampered_suspected: bool
     issues: List[Dict[str, Any]]
+    reupload_documents: List[str] = []
     ocr_data: Dict[str, Any]
