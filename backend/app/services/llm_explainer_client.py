@@ -38,7 +38,7 @@ async def ask_explainer(
     question: str,
     lang: str = "ar",
     history: list | None = None,
-    timeout_sec: float = 45.0,
+    timeout_sec: float = 90.0,
 ) -> Dict[str, Any]:
     """Ask a follow-up question about an application. Returns {"answer", "language"} or {"error": True}."""
     url = f"{settings.LLM_EXPLAINER_SERVICE_URL.rstrip('/')}/explain"
