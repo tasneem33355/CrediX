@@ -139,7 +139,7 @@ export default function FraudDetectionPage() {
                 </span>
 
                 <Link
-                  href={/applications/${c.id}}                  
+                  href={`/applications/${c.id}`}               
                   className="font-semibold text-brand-navy hover:text-brand-navy-light flex items-center gap-1 group transition-colors"
                 >
                   <span>{t('action.viewApplication')}</span>
