@@ -59,6 +59,7 @@ export default function DocumentAnalysisPage() {
   const [jsonFile, setJsonFile] = useState<File | null>(null);
   const [amount, setAmount] = useState('');
   const [tenure, setTenure] = useState('36');
+  const [mobile, setMobile] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<OcrIngestResult | null>(null);
@@ -87,6 +88,7 @@ export default function DocumentAnalysisPage() {
     setJsonFile(null);
     setAmount('');
     setTenure('36');
+    setMobile('');
     setSubmitError(null);
     setResult(null);
   };
@@ -94,14 +96,15 @@ export default function DocumentAnalysisPage() {
   const amountNum = Number(amount);
   const tenureNum = Number(tenure);
   const loanValid = amountNum > 0 && tenureNum >= 1 && tenureNum <= 480;
+  const mobileValid = /^01[0125]\d{8}$/.test(mobile);
   const filesReady = SLOT_DEFS.every((s) => slots[s.key] !== null);
-  const canSubmit = loanValid && (mode === 'files' ? filesReady : jsonFile !== null) && !submitting;
+  const canSubmit = loanValid && mobileValid && (mode === 'files' ? filesReady : jsonFile !== null) && !submitting;
 
   const handleSubmit = async () => {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const options = { loanType: 'personal', requestedAmount: amountNum, tenureMonths: tenureNum };
+      const options = { loanType: 'personal', requestedAmount: amountNum, tenureMonths: tenureNum, mobileNumber: mobile };
       let res: OcrIngestResult;
 
       if (mode === 'files') {
@@ -375,6 +378,16 @@ export default function DocumentAnalysisPage() {
                 />
               </div>
 
+              <Input
+                id="doc-mobile"
+                type="tel"
+                inputMode="numeric"
+                maxLength={11}
+                label={isAr ? 'رقم الموبايل (11 رقم)' : 'Mobile number (11 digits)'}
+                value={mobile}
+                onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+              />
+              
               {submitError && <Alert type="error" message={submitError} />}
 
               <div className="flex justify-end gap-2">
