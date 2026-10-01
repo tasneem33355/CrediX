@@ -365,6 +365,7 @@ export default function ApplicationDetailPage() {
                 </span>
               </p>
             </div>
+          </div>
 
           {/* Explainability Dropdown */}
           <div className="mt-5 pt-4 border-t border-border">
