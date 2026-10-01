@@ -28,6 +28,7 @@ from app.services.credit_risk_client import score_credit_risk
 from app.services.llm_explainer_client import generate_explanation
 from app.services.scoring_payload import build_scoring_payload
 from app.models.portfolio import DecisionAuditLog
+from app.crud.crud_case import sync_case_card
 
 def _sha256(data: Any) -> str:
     """Compute SHA256 hex digest of dictionary or string."""
@@ -273,6 +274,10 @@ async def ingest_ocr_and_create_application(
         icon_type="ocr",
     )
     db.add(timeline)
+    if app.status == "suspicious":
+        sync_case_card(db, app, "human_review", "إشارة احتيال", "Fraud Flag")
+    else:
+        sync_case_card(db, app, "processing", "استخراج البيانات", "Data Extraction")    
     db.commit()
     db.refresh(app)
 
@@ -538,7 +543,10 @@ async def run_scoring_pipeline_for_application(
         icon_type="score",
     )
     db.add(timeline_score)
-
+    if app.fraud_risk_category in ("high", "critical"):
+        sync_case_card(db, app, "human_review", "إشارة احتيال", "Fraud Flag")
+    else:
+        sync_case_card(db, app, "human_review", "درجة ائتمانية", "Credit Score")
     db.commit()
     db.refresh(app)
 
