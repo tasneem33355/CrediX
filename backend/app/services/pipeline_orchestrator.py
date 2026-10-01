@@ -329,7 +329,7 @@ async def run_scoring_pipeline_for_application(
         application_id=app.id,
         kind="pd",
         model_name="credit-risk-xgb-lgb-blend-v1",
-        model_version="1.0.0",
+        model_version=str(credit_res.get("model_version") or "unknown"),
         status="success" if not credit_res.get("error") else "failed",
         input_sha256=_sha256(scoring_payload),
         output=credit_res,
@@ -361,49 +361,126 @@ async def run_scoring_pipeline_for_application(
     )
     db.add(run_explain)
 
-    # 4. Update Application State
-    # AI Recommendation
-    model_decision = str(credit_res.get("decision", "MANUAL REVIEW")).upper()
+    # 4. Store service results as returned (nothing is invented)
+    risk_labels = {
+        "low": ("منخفض", "Low"),
+        "medium": ("متوسط", "Medium"),
+        "high": ("مرتفع", "High"),
+        "critical": ("حرج", "Critical"),
+    }
+
+    # --- Recommendation (from the credit model's decision) ---
+    model_decision = str(credit_res.get("decision") or "").upper()
     if "APPROVE" in model_decision:
-        rec = "approve"
-        rec_label = "موافقة تلقائية"
-        rec_label_en = "Auto-Approve"
+        rec, rec_label, rec_label_en = "approve", "موافقة تلقائية", "Auto-Approve"
     elif "REJECT" in model_decision:
-        rec = "reject"
-        rec_label = "رفض"
-        rec_label_en = "Auto-Reject"
+        rec, rec_label, rec_label_en = "reject", "رفض", "Auto-Reject"
     else:
-        rec = "manual_review"
-        rec_label = "مراجعة يدوية"
-        rec_label_en = "Manual Review"
+        rec, rec_label, rec_label_en = "manual_review", "مراجعة يدوية", "Manual Review"
 
-    # If critical fraud or discrepancy, force recommendation to manual review or reject
-    if fraud_res.get("fraud_risk_level") == "HIGH" or any(w.get("code") == "CRITICAL_INCOME_DISCREPANCY" for w in validation_summary.get("warnings", [])):
-        rec = "manual_review"
-        rec_label = "مراجعة يدوية (مخاطر احتيال/تناقض دخل)"
-        rec_label_en = "Manual Review (Fraud/Income Discrepancy)"
+    fraud_level = str(fraud_res.get("fraud_risk_level") or "").lower()
+    has_critical_discrepancy = any(
+        w.get("code") == "CRITICAL_INCOME_DISCREPANCY" for w in validation_summary.get("warnings", [])
+    )
+    if fraud_level in {"high", "critical"} or has_critical_discrepancy:
+        rec, rec_label, rec_label_en = (
+            "manual_review",
+            "مراجعة يدوية (مخاطر احتيال/تناقض دخل)",
+            "Manual Review (Fraud/Income Discrepancy)",
+        )
 
-    app.credit_score = int(credit_res.get("credit_score") or 650)
-    app.credit_risk_category = "low" if app.credit_score >= 700 else "medium" if app.credit_score >= 600 else "high"
-    app.credit_risk_label = "منخفض" if app.credit_risk_category == "low" else "متوسط"
-    app.credit_risk_label_en = "Low" if app.credit_risk_category == "low" else "Medium"
+    # --- Credit assessment ---
+    credit_score = credit_res.get("credit_score")
+    app.credit_score = int(credit_score) if credit_score is not None else None
+    tier = str(credit_res.get("risk_tier") or "").strip().lower()
+    if tier in risk_labels:
+        credit_cat = tier
+    elif "APPROVE" in model_decision:
+        credit_cat = "low"
+    elif "REJECT" in model_decision:
+        credit_cat = "high"
+    else:
+        credit_cat = "medium"
+    app.credit_risk_category = credit_cat
+    app.credit_risk_label, app.credit_risk_label_en = risk_labels[credit_cat]
 
-    fraud_score_pct = int(fraud_res.get("fraud_risk_score", 0.15) * 100)
-    app.fraud_risk_score = fraud_score_pct
-    app.fraud_risk_category = fraud_res.get("fraud_risk_level", "LOW").lower()
-    app.fraud_risk_label = "مرتفع" if app.fraud_risk_category == "high" else "متوسط" if app.fraud_risk_category == "medium" else "منخفض"
-    app.fraud_risk_label_en = app.fraud_risk_category.capitalize()
+    reason_codes = credit_res.get("reason_codes") or []
+    app.calculated_factors_count = len(reason_codes)
 
+    # --- Fraud assessment ---
+    raw_fraud = fraud_res.get("fraud_risk_score")
+    if raw_fraud is not None:
+        raw_fraud = float(raw_fraud)
+        app.fraud_risk_score = round(raw_fraud * 100) if raw_fraud <= 1 else round(raw_fraud)
+    if fraud_level in risk_labels:
+        app.fraud_risk_category = fraud_level
+        app.fraud_risk_label, app.fraud_risk_label_en = risk_labels[fraud_level]
+
+    # Model fraud signals are added next to the validation signals created at ingest.
+    sev_map = {"LOW": "low", "MEDIUM": "medium", "HIGH": "high", "CRITICAL": "high"}
+    sev_labels = {"low": ("منخفض", "Low"), "medium": ("متوسط", "Medium"), "high": ("مرتفع", "High")}
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    action_ar = fraud_res.get("action_ar") or ""
+    action_en = str(fraud_res.get("recommended_action") or "").replace("_", " ").capitalize()
+
+    def _model_signal(sig_id, title, title_en, severity, evidence, evidence_en):
+        return {
+            "id": sig_id,
+            "title": title,
+            "titleEn": title_en,
+            "severity": severity,
+            "severityLabel": sev_labels[severity][0],
+            "severityLabelEn": sev_labels[severity][1],
+            "confidence": None,
+            "evidence": evidence,
+            "evidenceEn": evidence_en,
+            "relatedDocument": "خدمة كشف الاحتيال",
+            "relatedDocumentEn": "Fraud detection service",
+            "timestamp": now_str,
+            "recommendedAction": action_ar,
+            "recommendedActionEn": action_en,
+        }
+
+    model_signals = []
+    for r in fraud_res.get("triggered_rules") or []:
+        model_signals.append(_model_signal(
+            f"rule_{r.get('rule_code')}",
+            r.get("rule_name_ar") or str(r.get("rule_code")),
+            r.get("rule_name_en") or str(r.get("rule_code")),
+            sev_map.get(str(r.get("severity")).upper(), "medium"),
+            r.get("description_ar") or "",
+            r.get("description_en") or "",
+        ))
+    for a in fraud_res.get("behavioral_anomalies") or []:
+        if not a.get("detected"):
+            continue
+        model_signals.append(_model_signal(
+            f"anom_{a.get('anomaly_name')}",
+            str(a.get("anomaly_name")),
+            str(a.get("anomaly_name")),
+            "medium",
+            a.get("explanation_ar") or "",
+            a.get("explanation_en") or "",
+        ))
+
+    # Re-running scoring replaces the previous model signals, keeps the ingest ones.
+    kept_signals = [
+        s for s in (app.fraud_signals or [])
+        if not str(s.get("id", "")).startswith(("rule_", "anom_"))
+    ]
+    app.fraud_signals = kept_signals + model_signals
+    app.analyzed_signals_count = len(app.fraud_signals)
+
+    # --- Recommendation text ---
     app.ai_recommendation = rec
     app.ai_recommendation_label = rec_label
     app.ai_recommendation_label_en = rec_label_en
-    app.ai_confidence = 88.0
+    app.ai_confidence = None  # no service returns a confidence for the decision
 
-    reason_texts = credit_res.get("reason_codes") or []
-    if explain_res.get("answer"):
-        reason_texts.append(explain_res.get("answer"))
-
-    app.recommendation_reasons = [{"ar": r, "en": r} for r in reason_texts]
+    reasons = [{"ar": r, "en": r} for r in reason_codes]
+    if explain_res.get("answer") and not explain_res.get("error"):
+        reasons.append({"ar": explain_res["answer"], "en": explain_res["answer"]})
+    app.recommendation_reasons = reasons
     app.pipeline_completed_steps = 5
 
     # Append timeline
