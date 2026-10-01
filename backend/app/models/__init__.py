@@ -6,6 +6,7 @@ from app.models.application import (
 )
 from app.models.case import CaseCard
 from app.models.chat import ChatSession, ChatMessage
+from app.models.portfolio import LoanFacility, DecisionAuditLog
 
 __all__ = [
     "User",
@@ -18,5 +19,7 @@ __all__ = [
     "CaseCard",
     "ChatSession",
     "ChatMessage",
+    "LoanFacility",
+    "DecisionAuditLog",
 ]
 
