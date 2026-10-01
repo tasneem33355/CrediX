@@ -9,7 +9,7 @@ from app.database import new_id
 from app.models.application import DecisionAudit, Document, LoanApplication, TimelineEvent
 from app.models.user import User
 from app.schemas.application import LoanApplicationCreate, LoanApplicationUpdate
-
+from app.models.portfolio import LoanFacility
 
 class DecisionConflict(Exception):
     """Raised when an application already has a final (approved/rejected) decision."""
@@ -260,6 +260,30 @@ _DECISION_OUTCOMES = {
                "Application transferred to human review queue."),
 }
 
+_CONTRACT_BY_LOAN_TYPE = {
+    "personal": "CASH_LOAN",
+    "auto": "CAR_LOAN",
+    "sme": "SME_LOAN",
+    "mortgage": "MORTGAGE",
+}
+
+
+def _create_facility_for(db: Session, db_app: LoanApplication) -> None:
+    """An approved application becomes a granted facility in the portfolio (once)."""
+    if db.query(LoanFacility.facility_id).filter(LoanFacility.application_id == db_app.id).first():
+        return
+    db.add(LoanFacility(
+        facility_id=new_id("fac"),
+        application_id=db_app.id,
+        customer_id=db_app.applicant_id or db_app.national_id,
+        contract_type=_CONTRACT_BY_LOAN_TYPE.get(db_app.loan_type, "CASH_LOAN"),
+        granted_amount=db_app.requested_amount,
+        granted_date=datetime.utcnow().date(),
+        tenor_months=db_app.tenure_months or 1,
+        facility_status="ACTIVE_PERFORMING",
+        historical_max_dpd=0,
+        is_demo=False,
+    ))
 
 def record_officer_decision(
     db: Session, app_id: str, decision: str, notes: Optional[str] = None, officer: Optional[User] = None,
@@ -298,6 +322,10 @@ def record_officer_decision(
             "fraud_risk_score": db_app.fraud_risk_score,
         },
     )
+    
+    if new_status == "approved":
+        _create_facility_for(db, db_app)
+        
     db.commit()
     db.refresh(db_app)
     return db_app
