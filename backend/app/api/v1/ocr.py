@@ -14,6 +14,7 @@ from app.services.pipeline_orchestrator import (
     run_scoring_pipeline_for_application,
 )
 from app.services.ocr_client import call_ocr_service
+from app.services.service_errors import ExternalServiceError
 
 router = APIRouter(prefix="/ocr", tags=["OCR & Scoring Pipeline"])
 
@@ -94,6 +95,12 @@ async def score_application_endpoint(
     try:
         result = await run_scoring_pipeline_for_application(db=db, app_id=app_id, actor=officer)
         return result
+    except ExternalServiceError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=f"{exc.service} service error: {exc.detail}",
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except Exception as exc:
