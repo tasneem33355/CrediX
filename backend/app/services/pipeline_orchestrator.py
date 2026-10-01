@@ -27,6 +27,7 @@ from app.services.fraud_client import score_fraud
 from app.services.credit_risk_client import score_credit_risk
 from app.services.llm_explainer_client import generate_explanation
 from app.services.scoring_payload import build_scoring_payload
+from app.models.portfolio import DecisionAuditLog
 
 def _sha256(data: Any) -> str:
     """Compute SHA256 hex digest of dictionary or string."""
@@ -491,6 +492,39 @@ async def run_scoring_pipeline_for_application(
     app.recommendation_reasons = reasons
     app.pipeline_completed_steps = 5
 
+    # 5. Record the scoring run for portfolio analytics (one row per application; latest wins)
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    form = scoring_payload.get("form_data") or {}
+    salary_raw = (scoring_payload.get("salary_certificate_fields") or {}).get("declared_net_salary")
+    salary = _num(salary_raw.get("value") if isinstance(salary_raw, dict) else salary_raw)
+    annuity = _num(form.get("requested_annuity"))
+    fraud_raw = _num(fraud_res.get("fraud_risk_score"))
+
+    audit_log = db.query(DecisionAuditLog).filter(DecisionAuditLog.application_id == app.id).first()
+    if audit_log is None:
+        audit_log = DecisionAuditLog(decision_id=new_id("dec"), application_id=app.id)
+        db.add(audit_log)
+    audit_log.national_id = app.national_id
+    audit_log.submission_timestamp = app.submitted_at
+    audit_log.customer_segment = "RETURNING" if scoring_payload.get("is_returning_customer") else "NEW_TO_BANK"
+    audit_log.requested_amount = app.requested_amount
+    audit_log.fraud_risk_score = (fraud_raw / 100 if fraud_raw > 1 else fraud_raw) if fraud_raw is not None else None
+    audit_log.fraud_risk_level = str(fraud_res.get("fraud_risk_level") or "").upper() or None
+    audit_log.is_anomaly = any(a.get("detected") for a in (fraud_res.get("behavioral_anomalies") or []))
+    audit_log.dti_ratio = round(annuity / salary, 4) if annuity and salary else None
+    audit_log.model_version = str(credit_res.get("model_version") or "") or None
+    audit_log.credit_score = app.credit_score
+    audit_log.default_probability = _num(credit_res.get("default_probability"))
+    audit_log.approved_tenure_months = app.tenure_months
+    audit_log.final_decision = str(credit_res.get("decision") or "") or None
+    audit_log.risk_tier = str(credit_res.get("risk_tier") or "") or None
+    audit_log.created_at = datetime.utcnow()
+    
     # Append timeline
     timeline_score = TimelineEvent(
         id=new_id("tl"),
