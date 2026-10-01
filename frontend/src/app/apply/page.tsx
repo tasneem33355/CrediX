@@ -67,6 +67,12 @@ export default function ApplyPage() {
     requestedAmount: '',
     tenureMonths: '36',
     purpose: '',
+    familyStatus: '',
+    childrenCount: '0',
+    housingType: '',
+    educationType: '',
+    ownsCar: false,
+    ownsRealty: false,
   });
   const [slots, setSlots] = useState<Record<SlotKey, File | null>>(EMPTY_SLOTS);
 
@@ -95,11 +101,33 @@ export default function ApplyPage() {
     currentStep === 1
       ? formData.fullName.trim().length > 1 && nidValid && mobileValid
       : currentStep === 2
-      ? Number(formData.requestedAmount) > 0
+      ? Number(formData.requestedAmount) > 0 &&
+        formData.familyStatus !== '' &&
+        formData.housingType !== '' &&
+        formData.educationType !== ''
       : currentStep === 3
       ? filesReady
       : !gate?.requires_acknowledgement || acknowledged;
-
+  
+  // Adds the applicant's own answers to form_data (read by the fraud and credit services).
+  const buildOcrDataWithForm = (ocr: Record<string, unknown>) => {
+    const children = Math.max(0, Number(formData.childrenCount || 0));
+    const hasSpouse = formData.familyStatus === 'Married';
+    return {
+      ...ocr,
+      form_data: {
+        ...((ocr.form_data as Record<string, unknown>) ?? {}),
+        family_status: formData.familyStatus,
+        children_count: children,
+        family_members_count: 1 + children + (hasSpouse ? 1 : 0),
+        housing_type: formData.housingType,
+        education_type: formData.educationType,
+        owns_car: formData.ownsCar,
+        owns_realty: formData.ownsRealty,
+      },
+    };
+  };
+  
   const handleNext = async () => {
     if (currentStep < 3) {
       setCurrentStep(currentStep + 1);
@@ -161,7 +189,7 @@ export default function ApplyPage() {
         throw new Error(language === 'ar' ? 'يرجى فحص المستندات أولاً.' : 'Please check your documents first.');
       }
       const created = await ingestOcrJson(
-        gate.ocr_data,
+        buildOcrDataWithForm(gate.ocr_data),
         {
           loanType: formData.loanType,
           requestedAmount: Number(formData.requestedAmount),
@@ -428,6 +456,72 @@ export default function ApplyPage() {
                       value={formData.purpose}
                       onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
                     />
+
+                    <p className="text-xs font-bold text-text-primary pt-2">
+                      {language === 'ar' ? 'بيانات إضافية للتقييم' : 'Additional details for assessment'}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Select
+                        label={language === 'ar' ? 'الحالة الاجتماعية' : 'Marital status'}
+                        value={formData.familyStatus}
+                        onChange={(e) => setFormData({ ...formData, familyStatus: e.target.value })}
+                        options={[
+                          { value: '', label: language === 'ar' ? 'اختر...' : 'Select...' },
+                          { value: 'Single / not married', label: language === 'ar' ? 'أعزب' : 'Single' },
+                          { value: 'Married', label: language === 'ar' ? 'متزوج' : 'Married' },
+                          { value: 'Separated', label: language === 'ar' ? 'منفصل / مطلق' : 'Separated / divorced' },
+                          { value: 'Widow', label: language === 'ar' ? 'أرمل' : 'Widowed' },
+                        ]}
+                      />
+                      <Input
+                        label={language === 'ar' ? 'عدد الأطفال' : 'Number of children'}
+                        type="number"
+                        value={formData.childrenCount}
+                        onChange={(e) => setFormData({ ...formData, childrenCount: e.target.value })}
+                      />
+                      <Select
+                        label={language === 'ar' ? 'نوع السكن' : 'Housing type'}
+                        value={formData.housingType}
+                        onChange={(e) => setFormData({ ...formData, housingType: e.target.value })}
+                        options={[
+                          { value: '', label: language === 'ar' ? 'اختر...' : 'Select...' },
+                          { value: 'House / apartment', label: language === 'ar' ? 'ملك' : 'Owned' },
+                          { value: 'Rented apartment', label: language === 'ar' ? 'إيجار' : 'Rented' },
+                          { value: 'With parents', label: language === 'ar' ? 'مع الأهل' : 'With parents' },
+                        ]}
+                      />
+                      <Select
+                        label={language === 'ar' ? 'المؤهل الدراسي' : 'Education'}
+                        value={formData.educationType}
+                        onChange={(e) => setFormData({ ...formData, educationType: e.target.value })}
+                        options={[
+                          { value: '', label: language === 'ar' ? 'اختر...' : 'Select...' },
+                          { value: 'Lower secondary', label: language === 'ar' ? 'إعدادي' : 'Lower secondary' },
+                          { value: 'Secondary / secondary special', label: language === 'ar' ? 'ثانوي / دبلوم' : 'Secondary / diploma' },
+                          { value: 'Incomplete higher', label: language === 'ar' ? 'جامعي غير مكتمل' : 'Incomplete higher' },
+                          { value: 'Higher education', label: language === 'ar' ? 'جامعي' : 'University degree' },
+                          { value: 'Academic degree', label: language === 'ar' ? 'دراسات عليا' : 'Postgraduate' },
+                        ]}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-6 text-xs text-text-primary">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.ownsCar}
+                          onChange={(e) => setFormData({ ...formData, ownsCar: e.target.checked })}
+                        />
+                        <span>{language === 'ar' ? 'أملك سيارة' : 'I own a car'}</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.ownsRealty}
+                          onChange={(e) => setFormData({ ...formData, ownsRealty: e.target.checked })}
+                        />
+                        <span>{language === 'ar' ? 'أملك عقاراً' : 'I own real estate'}</span>
+                      </label>
+                    </div>
                   </div>
                 )}
 
