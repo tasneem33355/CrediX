@@ -32,3 +32,24 @@ async def generate_explanation(
                 "language": lang,
                 "error": True,
             }
+
+async def ask_explainer(
+    blocks: list,
+    question: str,
+    lang: str = "ar",
+    history: list | None = None,
+    timeout_sec: float = 45.0,
+) -> Dict[str, Any]:
+    """Ask a follow-up question about an application. Returns {"answer", "language"} or {"error": True}."""
+    url = f"{settings.LLM_EXPLAINER_SERVICE_URL.rstrip('/')}/explain"
+    payload: Dict[str, Any] = {"blocks": blocks, "question": question, "lang": lang}
+    if history:
+        payload["history"] = history
+
+    async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        try:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            return {"error": True, "detail": str(exc)}
