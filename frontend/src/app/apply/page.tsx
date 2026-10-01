@@ -13,17 +13,35 @@ import {
   Check,
   Lock,
   UserCheck,
+  Paperclip,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { FileUploader } from '@/components/ui/FileUploader';
 import { CredixLogo } from '@/components/ui/CredixLogo';
-import { createApplication } from '@/lib/api';
+import { uploadAndProcessDocuments } from '@/lib/api';
 import { isDemoMode } from '@/lib/config';
 import { RequireRole } from '@/components/auth/RequireRole';
+
+const SLOT_DEFS = [
+  { key: 'nationalIdFront', ar: 'بطاقة الرقم القومي (الوجه)', en: 'National ID (front)' },
+  { key: 'nationalIdBack', ar: 'بطاقة الرقم القومي (الظهر)', en: 'National ID (back)' },
+  { key: 'salaryCertificate', ar: 'شهادة الراتب', en: 'Salary certificate' },
+  { key: 'bankStatement', ar: 'كشف الحساب البنكي', en: 'Bank statement' },
+  { key: 'iscore', ar: 'تقرير الآي سكور', en: 'I-Score report' },
+] as const;
+
+type SlotKey = (typeof SLOT_DEFS)[number]['key'];
+
+const EMPTY_SLOTS: Record<SlotKey, File | null> = {
+  nationalIdFront: null,
+  nationalIdBack: null,
+  salaryCertificate: null,
+  bankStatement: null,
+  iscore: null,
+};
 
 export default function ApplyPage() {
   const { t, language, toggleLanguage, direction } = useLanguage();
@@ -33,18 +51,19 @@ export default function ApplyPage() {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
-    fullName: user?.name || 'أحمد فؤاد عبد الله',
-    nationalId: '28501151001234',
-    mobileNumber: '01012345678',
-    loanType: 'sme',
-    requestedAmount: '1250000',
+    fullName: user?.name || '',
+    nationalId: '',
+    mobileNumber: '',
+    loanType: 'personal',
+    requestedAmount: '',
     tenureMonths: '36',
-    purpose: 'توسعة نشاط تجاري وشراء معدات وبضائع',
+    purpose: '',
   });
+  const [slots, setSlots] = useState<Record<SlotKey, File | null>>(EMPTY_SLOTS);
 
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submittedAppId, setSubmittedAppId] = useState<string>('APP-2026-0839');
+  const [submittedAppId, setSubmittedAppId] = useState<string>('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { session } = useAuth();
 
@@ -55,36 +74,58 @@ export default function ApplyPage() {
     { num: 4, title: language === 'ar' ? 'المراجعة والإرسال' : 'Review & submit' },
   ];
 
+  const nidValid = /^\d{14}$/.test(formData.nationalId);
+  const mobileValid = /^01[0125]\d{8}$/.test(formData.mobileNumber);
+  const filesReady = SLOT_DEFS.every((s) => slots[s.key] !== null);
+  const canProceed =
+    currentStep === 1
+      ? formData.fullName.trim().length > 1 && nidValid && mobileValid
+      : currentStep === 2
+      ? Number(formData.requestedAmount) > 0
+      : currentStep === 3
+      ? filesReady
+      : true;
+
   const handleNext = async () => {
     if (currentStep < 4) {
       setCurrentStep(currentStep + 1);
-    } else {
-      setIsSubmitting(true);
-      setSubmitError(null);
-      try {
-        if (!isDemoMode && session?.access_token) {
-          const created = await createApplication(
-            {
-              applicantName: formData.fullName,
-              nationalId: formData.nationalId,
-              mobileNumber: formData.mobileNumber,
-              loanType: formData.loanType,
-              requestedAmount: Number(formData.requestedAmount),
-              tenureMonths: Number(formData.tenureMonths),
-              purpose: formData.purpose,
-            },
-            session.access_token
-          );
-          if (created && created.id) {
-            setSubmittedAppId(created.id);
-          }
-        }
+      return;
+    }
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      if (isDemoMode) {
+        setSubmittedAppId('APP-DEMO');
         setIsSubmitted(true);
-      } catch (err: any) {
-        setSubmitError(err.message || (language === 'ar' ? 'حدث خطأ أثناء إرسال الطلب، يرجى المحاولة ثانية.' : 'Failed to submit application.'));
-      } finally {
-        setIsSubmitting(false);
+        return;
       }
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error(language === 'ar' ? 'سجّل الدخول أولاً ثم اعد المحاولة.' : 'Please sign in first.');
+      }
+      const result = await uploadAndProcessDocuments(
+        {
+          nationalIdFront: slots.nationalIdFront as File,
+          nationalIdBack: slots.nationalIdBack as File,
+          salaryCertificate: slots.salaryCertificate as File,
+          bankStatement: slots.bankStatement as File,
+          iscore: slots.iscore as File,
+        },
+        {
+          loanType: formData.loanType,
+          requestedAmount: Number(formData.requestedAmount),
+          tenureMonths: Number(formData.tenureMonths),
+          purpose: formData.purpose || undefined,
+          mobileNumber: formData.mobileNumber,
+        },
+        token
+      );
+      setSubmittedAppId(result.application_id);
+      setIsSubmitted(true);
+    } catch (err: any) {
+      setSubmitError(err.message || (language === 'ar' ? 'حدث خطأ أثناء رفع المستندات، حاول مرة أخرى.' : 'Failed to process documents.'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
@@ -341,44 +382,34 @@ export default function ApplyPage() {
 
                 {/* STEP 3: Document Uploads */}
                 {currentStep === 3 && (
-                  <div className="space-y-4">
-                    <FileUploader />
-                  </div>
-                )}
-
-                {/* STEP 4: Review & Submit */}
-                {currentStep === 4 && (
-                  <div className="space-y-4 text-xs">
-                    <div className="p-4 rounded-2xl bg-surface-subtle space-y-2 text-start">
-                      <div className="flex justify-between py-1 border-b border-border">
-                        <span className="text-text-muted">{language === 'ar' ? 'الاسم بالكامل:' : 'Full Name:'}</span>
-                        <span className="font-bold text-text-primary">{formData.fullName}</span>
+                  <div className="space-y-2">
+                    {SLOT_DEFS.map((slot) => (
+                      <div
+                        key={slot.key}
+                        className="flex items-center justify-between gap-3 p-3 bg-surface-subtle border border-border rounded-xl"
+                      >
+                        <div className="min-w-0 text-start">
+                          <p className="text-xs font-semibold text-text-primary">{language === 'ar' ? slot.ar : slot.en}</p>
+                          <p className="text-[11px] text-text-muted truncate">
+                            {slots[slot.key]?.name ?? (language === 'ar' ? 'لم يتم اختيار ملف' : 'No file selected')}
+                          </p>
+                        </div>
+                        <label className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-navy bg-[#E8EEF5] hover:bg-[#E8EEF5]/80 rounded-xl cursor-pointer border border-brand-navy/20 transition-colors">
+                          <Paperclip className="w-3.5 h-3.5" />
+                          <span>{language === 'ar' ? 'اختيار' : 'Choose'}</span>
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] ?? null;
+                              setSlots((prev) => ({ ...prev, [slot.key]: file }));
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
                       </div>
-                      <div className="flex justify-between py-1 border-b border-border">
-                        <span className="text-text-muted">{language === 'ar' ? 'الرقم القومي:' : 'National ID:'}</span>
-                        <span className="font-bold text-text-primary font-mono">{formData.nationalId}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-border">
-                        <span className="text-text-muted">{language === 'ar' ? 'رقم الموبايل:' : 'Mobile Number:'}</span>
-                        <span className="font-bold text-text-primary font-mono">{formData.mobileNumber}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-border">
-                        <span className="text-text-muted">{language === 'ar' ? 'نوع التمويل:' : 'Loan Type:'}</span>
-                        <span className="font-bold text-text-primary">
-                          {formData.loanType === 'personal' ? 'تمويل شخصي' : formData.loanType === 'sme' ? 'تمويل مشروعات صغيرة' : formData.loanType === 'auto' ? 'تمويل سيارات' : 'تمويل عقاري'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-text-muted">{language === 'ar' ? 'المبلغ المطلوب:' : 'Requested Amount:'}</span>
-                        <span className="font-bold text-brand-navy">{Number(formData.requestedAmount || 0).toLocaleString()} ج.م</span>
-                      </div>
-                    </div>
-
-                    {submitError && (
-                      <div className="p-3 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-xs text-start">
-                        {submitError}
-                      </div>
-                    )}
+                    ))}
                   </div>
                 )}
 
@@ -398,12 +429,12 @@ export default function ApplyPage() {
                     variant="primary"
                     size="md"
                     onClick={() => void handleNext()}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !canProceed}
                     className="shadow-xs"
                     icon={<Arrow className="w-4 h-4" />}
                   >
                     {isSubmitting
-                      ? (language === 'ar' ? 'جاري الإرسال...' : 'Submitting...')
+                      ? (language === 'ar' ? 'جاري رفع المستندات وفحصها...' : 'Submitting...')
                       : currentStep === 4
                       ? (language === 'ar' ? 'إرسال الطلب للتقييم' : 'Submit Application')
                       : t('action.next')}
