@@ -21,6 +21,8 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { FileUploader } from '@/components/ui/FileUploader';
 import { CredixLogo } from '@/components/ui/CredixLogo';
+import { createApplication } from '@/lib/api';
+import { isDemoMode } from '@/lib/config';
 import { RequireRole } from '@/components/auth/RequireRole';
 
 export default function ApplyPage() {
@@ -41,6 +43,10 @@ export default function ApplyPage() {
   });
 
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittedAppId, setSubmittedAppId] = useState<string>('APP-2026-0839');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { session } = useAuth();
 
   const steps = [
     { num: 1, title: language === 'ar' ? 'المعلومات الشخصية' : 'Personal Information' },
@@ -49,14 +55,39 @@ export default function ApplyPage() {
     { num: 4, title: language === 'ar' ? 'المراجعة والإرسال' : 'Review & submit' },
   ];
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep < 4) {
       setCurrentStep(currentStep + 1);
     } else {
-      setIsSubmitted(true);
+      setIsSubmitting(true);
+      setSubmitError(null);
+      try {
+        if (!isDemoMode && session?.access_token) {
+          const created = await createApplication(
+            {
+              applicantName: formData.fullName,
+              nationalId: formData.nationalId,
+              mobileNumber: formData.mobileNumber,
+              loanType: formData.loanType,
+              requestedAmount: Number(formData.requestedAmount),
+              tenureMonths: Number(formData.tenureMonths),
+              purpose: formData.purpose,
+            },
+            session.access_token
+          );
+          if (created && created.id) {
+            setSubmittedAppId(created.id);
+          }
+        }
+        setIsSubmitted(true);
+      } catch (err: any) {
+        setSubmitError(err.message || (language === 'ar' ? 'حدث خطأ أثناء إرسال الطلب، يرجى المحاولة ثانية.' : 'Failed to submit application.'));
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
-
+  
   const handleBack = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
@@ -186,7 +217,7 @@ export default function ApplyPage() {
                   {t('portal.submittedDesc')}
                 </p>
                 <div className="inline-block mt-2 px-3 py-1 bg-[#E8EEF5] border border-border rounded-full text-xs font-bold text-brand-navy font-mono">
-                  {language === 'ar' ? 'رقم الطلب المرجعي: APP-2026-0839' : 'Application Ref: APP-2026-0839'}
+                  {language === 'ar' ? `رقم الطلب المرجعي: ${submittedAppId}` : `Application Ref: ${submittedAppId}`}
                 </div>
               </div>
               <div className="pt-4 flex flex-col sm:flex-row justify-center items-center gap-3">
@@ -318,24 +349,36 @@ export default function ApplyPage() {
                 {/* STEP 4: Review & Submit */}
                 {currentStep === 4 && (
                   <div className="space-y-4 text-xs">
-                    <div className="p-4 rounded-2xl bg-surface-subtle space-y-2">
+                    <div className="p-4 rounded-2xl bg-surface-subtle space-y-2 text-start">
                       <div className="flex justify-between py-1 border-b border-border">
-                        <span className="text-text-muted">الاسم بالكامل:</span>
+                        <span className="text-text-muted">{language === 'ar' ? 'الاسم بالكامل:' : 'Full Name:'}</span>
                         <span className="font-bold text-text-primary">{formData.fullName}</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-border">
-                        <span className="text-text-muted">الرقم القومي:</span>
-                        <span className="font-bold text-text-primary">{formData.nationalId}</span>
+                        <span className="text-text-muted">{language === 'ar' ? 'الرقم القومي:' : 'National ID:'}</span>
+                        <span className="font-bold text-text-primary font-mono">{formData.nationalId}</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-border">
-                        <span className="text-text-muted">نوع التمويل:</span>
-                        <span className="font-bold text-text-primary">تمويل مشروعات صغيرة</span>
+                        <span className="text-text-muted">{language === 'ar' ? 'رقم الموبايل:' : 'Mobile Number:'}</span>
+                        <span className="font-bold text-text-primary font-mono">{formData.mobileNumber}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-border">
+                        <span className="text-text-muted">{language === 'ar' ? 'نوع التمويل:' : 'Loan Type:'}</span>
+                        <span className="font-bold text-text-primary">
+                          {formData.loanType === 'personal' ? 'تمويل شخصي' : formData.loanType === 'sme' ? 'تمويل مشروعات صغيرة' : formData.loanType === 'auto' ? 'تمويل سيارات' : 'تمويل عقاري'}
+                        </span>
                       </div>
                       <div className="flex justify-between py-1">
-                        <span className="text-text-muted">المبلغ المطلوب:</span>
-                        <span className="font-bold text-brand-navy">1,250,000 ج.م</span>
+                        <span className="text-text-muted">{language === 'ar' ? 'المبلغ المطلوب:' : 'Requested Amount:'}</span>
+                        <span className="font-bold text-brand-navy">{Number(formData.requestedAmount || 0).toLocaleString()} ج.م</span>
                       </div>
                     </div>
+
+                    {submitError && (
+                      <div className="p-3 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-xs text-start">
+                        {submitError}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -354,14 +397,15 @@ export default function ApplyPage() {
                   <Button
                     variant="primary"
                     size="md"
-                    onClick={handleNext}
+                    onClick={() => void handleNext()}
+                    disabled={isSubmitting}
                     className="shadow-xs"
                     icon={<Arrow className="w-4 h-4" />}
                   >
-                    {currentStep === 4
-                      ? language === 'ar'
-                        ? 'إرسال الطلب للتقييم'
-                        : 'Submit Application'
+                    {isSubmitting
+                      ? (language === 'ar' ? 'جاري الإرسال...' : 'Submitting...')
+                      : currentStep === 4
+                      ? (language === 'ar' ? 'إرسال الطلب للتقييم' : 'Submit Application')
                       : t('action.next')}
                   </Button>
                 </div>
