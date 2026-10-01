@@ -2,6 +2,7 @@
  * Central API Client for CrediX Underwriting, OCR, and Scoring.
  */
 
+import type { CaseCard } from '@/types';
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '/api/v1').replace(/\/$/, '');
 
 function getHeaders(token?: string): HeadersInit {
@@ -134,6 +135,45 @@ export async function fetchFraudCases(token?: string): Promise<FraudCase[]> {
   const res = await fetch(`${API_BASE}/fraud/cases`, { headers: getHeaders(token) });
   if (!res.ok) {
     throw new Error(`Failed to load fraud cases (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchCases(token?: string): Promise<CaseCard[]> {
+  const res = await fetch(`${API_BASE}/cases`, { headers: getHeaders(token) });
+  if (!res.ok) {
+    throw new Error(`Failed to load cases (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createCase(
+  data: { clientName: string; amount: number; stageTag: string; stageTagEn: string },
+  token?: string
+): Promise<CaseCard> {
+  const res = await fetch(`${API_BASE}/cases`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify({ ...data, columnId: 'processing' }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to create case (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function moveCase(
+  caseId: string,
+  columnId: CaseCard['columnId'],
+  token?: string
+): Promise<CaseCard> {
+  const res = await fetch(`${API_BASE}/cases/${caseId}`, {
+    method: 'PATCH',
+    headers: getHeaders(token),
+    body: JSON.stringify({ columnId }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to move case (${res.status})`);
   }
   return res.json();
 }
