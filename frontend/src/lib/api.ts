@@ -15,6 +15,29 @@ function getHeaders(token?: string): HeadersInit {
   return headers;
 }
 
+export async function fetchApplicationsList(params: {
+  skip?: number;
+  limit?: number;
+  status?: string;
+  loanType?: string;
+  search?: string;
+}, token?: string) {
+  const query = new URLSearchParams();
+  if (params.skip !== undefined) query.set('skip', String(params.skip));
+  if (params.limit !== undefined) query.set('limit', String(params.limit));
+  if (params.status && params.status !== 'all') query.set('status', params.status);
+  if (params.loanType && params.loanType !== 'all') query.set('loanType', params.loanType);
+  if (params.search) query.set('search', params.search);
+
+  const res = await fetch(`${API_BASE}/applications?${query.toString()}`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load applications (Status ${res.status})`);
+  }
+  return res.json() as Promise<unknown[]>;
+}
+
 export async function fetchApplicationById(appId: string, token?: string) {
   const res = await fetch(`${API_BASE}/applications/${appId}`, {
     headers: getHeaders(token),
