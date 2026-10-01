@@ -11,7 +11,7 @@ class FraudSignal(BaseModel):
     severity: str  # 'low' | 'medium' | 'high'
     severity_label: str = Field(..., alias="severityLabel")
     severity_label_en: str = Field(..., alias="severityLabelEn")
-    confidence: float
+    confidence: Optional[float] = None
     evidence: str
     evidence_en: str = Field(..., alias="evidenceEn")
     related_document: str = Field(..., alias="relatedDocument")
