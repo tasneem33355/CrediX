@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     CREDIT_RISK_SERVICE_URL: str = "https://credit-risk-ml-system-v1-production.up.railway.app"
     LLM_EXPLAINER_SERVICE_URL: str = "https://llm-explainer-service-production.up.railway.app"
     PORTFOLIO_ANALYTICS_SERVICE_URL: str = "https://portfolio-analytics-service-production.up.railway.app"
-    FRAUD_SERVICE_URL: str = ""  # Stubbed/fallback active until Abdelrahman supplies live URL
+    FRAUD_SERVICE_URL: str = "https://fraud-detection-service-v1-production.up.railway.app"
 
     @property
     def is_production(self) -> bool:
