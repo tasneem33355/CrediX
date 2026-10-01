@@ -126,72 +126,100 @@ export async function fetchExtractions(appId: string, token?: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Macro Portfolio Analytics Service (direct call: read-only, CORS enabled)
-// No mock fallbacks: on any failure these return null and the page must show
-// an error / empty state instead of invented numbers.
+// Portfolio analytics (computed by our backend from the database)
+// On any failure these return null and the page shows an empty/error state.
 // ---------------------------------------------------------------------------
 
-const PORTFOLIO_ANALYTICS_BASE = (
-  process.env.NEXT_PUBLIC_PORTFOLIO_ANALYTICS_URL ||
-  'https://portfolio-analytics-service-production.up.railway.app'
-).replace(/\/$/, '');
+export interface PortfolioKpis {
+  total_loans_count: number;
+  total_portfolio_volume: number;
+  average_loan_size: number;
+  npl_ratio: number;
+  performing_loans_count: number;
+  npl_loans_count: number;
+  has_data: boolean;
+  includes_demo_data: boolean;
+}
 
-async function getPortfolioData(path: string) {
+export interface PortfolioConcentration {
+  by_product: Record<string, number>;
+  by_product_volume: Record<string, number>;
+  by_status: Record<string, number>;
+}
+
+export interface PortfolioScoredKpis {
+  has_data: boolean;
+  total_decisions: number;
+  by_decision: Record<string, number>;
+  by_fraud_level: Record<string, number>;
+  anomalies_count: number;
+  avg_credit_score: number | null;
+  avg_default_probability: number | null;
+  avg_dti_ratio: number | null;
+}
+
+export interface PortfolioDrift {
+  has_enough_data: boolean;
+  system_health: 'HEALTHY' | 'MONITOR' | 'CRITICAL' | 'INSUFFICIENT_DATA';
+  retraining_recommended: boolean;
+  max_psi_feature: string | null;
+  max_psi_score: number | null;
+  features_psi: Record<string, number>;
+  decisions_analyzed: number;
+  min_decisions_required: number;
+  cbe_audit_comment: string;
+}
+
+export interface StressTestResult {
+  has_data: boolean;
+  scenario_name: string;
+  scenario_results: {
+    portfolio_exposure: number;
+    baseline_pd: number;
+    baseline_ecl: number;
+    stressed_pd: number;
+    stressed_ecl: number;
+    ecl_delta: number;
+  } | null;
+  sensitivity_curve: { rate_hike_bps: number; stressed_pd: number; stressed_ecl: number }[];
+  assumptions?: { baseline_pd_source: string; base_lgd: number; pd_increase_per_100bps: number };
+}
+
+async function requestPortfolio<T>(path: string, token?: string, init?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(`${PORTFOLIO_ANALYTICS_BASE}/api/v1/portfolio/${path}`);
+    const res = await fetch(`${API_BASE}/portfolio/${path}`, { ...init, headers: getHeaders(token) });
     if (!res.ok) return null;
-    const json = await res.json();
-    return json?.data ?? null;
+    return (await res.json()) as T;
   } catch {
     return null;
   }
 }
 
-export function fetchPortfolioKpis() {
-  return getPortfolioData('kpis');
+export function fetchPortfolioKpis(token?: string) {
+  return requestPortfolio<PortfolioKpis>('kpis', token);
 }
 
-export function fetchPortfolioConcentration() {
-  return getPortfolioData('concentration');
+export function fetchPortfolioConcentration(token?: string) {
+  return requestPortfolio<PortfolioConcentration>('concentration', token);
 }
 
-export function fetchPortfolioScoredKpis() {
-  return getPortfolioData('scored-kpis');
+export function fetchPortfolioScoredKpis(token?: string) {
+  return requestPortfolio<PortfolioScoredKpis>('scored-kpis', token);
 }
 
-export function fetchPortfolioDrift() {
-  return getPortfolioData('drift');
+export function fetchPortfolioDrift(token?: string) {
+  return requestPortfolio<PortfolioDrift>('drift', token);
 }
 
-export async function runPortfolioStressTest(
-  pdMultiplier = 2.0,
-  lgdMultiplier = 1.3,
-  portfolioExposure?: number
-) {
-  try {
-    let exposure = portfolioExposure;
-    if (exposure === undefined) {
-      const kpis = await fetchPortfolioKpis();
-      exposure = kpis?.total_portfolio_volume;
-    }
-    if (!exposure) return null;
-
-    const res = await fetch(`${PORTFOLIO_ANALYTICS_BASE}/api/v1/portfolio/stress-test`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scenario_name: 'Macro Stress Scenario',
-        portfolio_exposure: exposure,
-        baseline_pd: 0.045,
-        pd_multiplier: pdMultiplier,
-        lgd_multiplier: lgdMultiplier,
-      }),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+export function runPortfolioStressTest(pdMultiplier = 2.0, lgdMultiplier = 1.3, token?: string) {
+  return requestPortfolio<StressTestResult>('stress-test', token, {
+    method: 'POST',
+    body: JSON.stringify({
+      scenario_name: 'Macro Stress Scenario',
+      pd_multiplier: pdMultiplier,
+      lgd_multiplier: lgdMultiplier,
+    }),
+  });
 }
 
 // ---------------------------------------------------------------------------
