@@ -251,7 +251,7 @@ async def run_scoring_pipeline_for_application(
 
     # 1. Step 1: Fraud Scoring
     t0 = time.time()
-    fraud_res = await score_fraud(ocr_payload, validation_summary=validation_summary)
+    fraud_res = await score_fraud(ocr_payload)
     latency_fraud = int((time.time() - t0) * 1000)
 
     run_fraud = ModelRun(
@@ -293,7 +293,7 @@ async def run_scoring_pipeline_for_application(
 
     # 3. Step 3: LLM Explainer
     t0 = time.time()
-    explain_res = await generate_explanation(credit_data=credit_res, fraud_data=fraud_res, lang="ar")
+    explain_res = await generate_explanation(credit_risk_data=credit_res, fraud_data=fraud_res, lang="ar")
     latency_explain = int((time.time() - t0) * 1000)
 
     run_explain = ModelRun(
