@@ -43,6 +43,7 @@ def build_scoring_payload(ocr_payload: Dict[str, Any], app: Any) -> Dict[str, An
             "tenure_months": tenure,
             "requested_annuity": round(monthly_annuity(amount, annual_rate_pct(), tenure), 2),
             "loan_purpose": app.purpose or app.loan_type or "unspecified",
+            **({"mobile_phone": app.mobile_number} if app.mobile_number else {}),
         }
     )
     payload["form_data"] = form_data
