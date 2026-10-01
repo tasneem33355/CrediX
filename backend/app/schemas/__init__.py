@@ -26,8 +26,12 @@ from app.schemas.chat import (
     ChatSessionWithMessagesResponse,
 )
 from app.schemas.dashboard import DashboardStats, TrendItem, StatusDonutItem, LoanTypeItem
+from app.schemas.ocr import OCRSubmissionRequest, OCRIngestResponse, FullPipelineScoreResponse
 
 __all__ = [
+    "OCRSubmissionRequest",
+    "OCRIngestResponse",
+    "FullPipelineScoreResponse",
     "UserBase",
     "UserCreate",
     "UserResponse",
