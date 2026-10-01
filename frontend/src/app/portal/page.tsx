@@ -24,6 +24,8 @@ import { Button } from '@/components/ui/Button';
 import { CredixLogo } from '@/components/ui/CredixLogo';
 import { RequireRole } from '@/components/auth/RequireRole';
 import { mockApplications } from '@/data/mockData';
+import { fetchApplicationsList } from '@/lib/api';
+import { isDemoMode } from '@/lib/config';
 
 export default function ClientPortalPage() {
   const { t, language, formatCurrency, toggleLanguage, direction } = useLanguage();
@@ -36,43 +38,95 @@ export default function ClientPortalPage() {
     router.push('/auth/login');
   };
 
-  const myApp = mockApplications[0]; // Ahmed Fouad application
+  const [appData, setAppData] = React.useState<any>(mockApplications[0]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    async function loadClientApp() {
+      if (isDemoMode) {
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const apps = await fetchApplicationsList({ limit: 1 });
+        if (isMounted && Array.isArray(apps) && apps.length > 0) {
+          const raw = apps[0] as any;
+          setAppData({
+            id: raw.id,
+            applicantName: raw.applicant_name ?? raw.applicantName ?? 'العميل',
+            applicantNameEn: raw.applicant_name_en ?? raw.applicantNameEn ?? 'Applicant',
+            requestedAmount: Number(raw.requested_amount ?? raw.requestedAmount ?? 100000),
+            loanTypeLabel: raw.loan_type_label ?? raw.loanTypeLabel ?? 'تمويل شخصي',
+            loanTypeLabelEn: raw.loan_type_label_en ?? raw.loanTypeLabelEn ?? 'Personal Financing',
+            status: raw.status ?? 'under_review',
+            tenureMonths: raw.tenure_months ?? raw.tenureMonths ?? 36,
+            documents: raw.documents && raw.documents.length > 0 ? raw.documents : mockApplications[0].documents,
+          });
+        }
+      } catch {
+        // Fallback to seeded demo app
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    void loadClientApp();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const myApp = appData;
+  const isApproved = myApp.status === 'approved';
+  const isRejected = myApp.status === 'rejected';
+
+  // Calculate monthly installment estimate
+  const tenure = Number(myApp.tenureMonths) || 36;
+  const monthlyEst = Math.round((Number(myApp.requestedAmount) / tenure) * 1.18);
 
   const trackingSteps = [
     {
       id: 1,
       title: t('portal.step1'),
       status: 'completed',
-      date: '04 سبتمبر 2026 - 09:42 ص',
-      desc: language === 'ar' ? 'تم استلام كافة بيانات التمويل وملفاتك بنجاح' : 'Application data & documents received successfully',
+      date: language === 'ar' ? 'تم الاعتماد والاستلام' : 'Received & Logged',
+      desc: language === 'ar' ? 'تم استلام كافة بيانات التمويل ومستنداتك بنجاح' : 'Application data & documents received successfully',
     },
     {
       id: 2,
       title: t('portal.step2'),
       status: 'completed',
-      date: '04 سبتمبر 2026 - 09:43 ص',
-      desc: language === 'ar' ? 'تم استخراج البيانات الرقمية بدقة 97.4% ومطابقتها' : 'Digital data extracted with 97.4% OCR accuracy',
+      date: language === 'ar' ? 'مكتمل' : 'Completed',
+      desc: language === 'ar' ? 'تم استخراج البيانات الرقمية وفحص جودة المستندات آلياً' : 'Digital data extracted and document quality verified',
     },
     {
       id: 3,
       title: t('portal.step3'),
       status: 'completed',
-      date: '04 سبتمبر 2026 - 09:45 ص',
-      desc: language === 'ar' ? 'اكتملت مرحلة التقييم الآلي لحساب الجدارة وسجل الدفع' : 'Automated creditworthiness assessment complete',
+      date: language === 'ar' ? 'مكتمل' : 'Completed',
+      desc: language === 'ar' ? 'اكتملت مرحلة التقييم الآلي لاحتساب الملاءة المالية' : 'Automated creditworthiness assessment complete',
     },
     {
       id: 4,
       title: t('portal.step4'),
-      status: 'current',
-      date: language === 'ar' ? 'قيد التنفيذ الآن' : 'In Progress',
-      desc: language === 'ar' ? 'يقوم فريق الائتمان حالياً بمراجعة أوراق التمويل لإصدار القرار' : 'Credit team is currently reviewing documents to issue decision',
+      status: (isApproved || isRejected) ? 'completed' : 'current',
+      date: (isApproved || isRejected) ? (language === 'ar' ? 'اكتملت المراجعة' : 'Review completed') : (language === 'ar' ? 'قيد التنفيذ الآن' : 'In Progress'),
+      desc: isApproved
+        ? (language === 'ar' ? 'تمت مراجعة الطلب بنجاح من مسؤولي الائتمان' : 'Credit review completed successfully')
+        : isRejected
+        ? (language === 'ar' ? 'تم الانتهاء من المراجعة الائتمانية' : 'Credit assessment finished')
+        : (language === 'ar' ? 'يقوم فريق الائتمان حالياً بفحص ومراجعة أوراق التمويل' : 'Credit team is currently reviewing documents'),
     },
     {
       id: 5,
       title: t('portal.step5'),
-      status: 'pending',
-      date: language === 'ar' ? 'الخطوة القادمة' : 'Next Step',
-      desc: language === 'ar' ? 'سيتم إشعارك فور اعتماد التمويل لتوقيع العقود البنكية واستلام المبلغ' : 'You will be notified once approved to sign banking contracts',
+      status: isApproved ? 'completed' : isRejected ? 'failed' : 'pending',
+      date: isApproved ? (language === 'ar' ? 'تم الاعتماد بنجاح' : 'Approved') : isRejected ? (language === 'ar' ? 'طلب مرفوض' : 'Declined') : (language === 'ar' ? 'الخطوة القادمة' : 'Next Step'),
+      desc: isApproved
+        ? (language === 'ar' ? 'تهانينا! تم اعتماد التمويل، برجاء التوجه للفرع لتوقيع العقود واستلام المبلغ' : 'Congratulations! Your loan is approved. Visit branch for contract signing.')
+        : isRejected
+        ? (language === 'ar' ? 'نعتذر، لم يستوفِ الطلب الشروط الائتمانية المطلوبة حالياً' : 'We regret to inform that the application did not meet criteria.')
+        : (language === 'ar' ? 'سيتم إشعارك فور إصدار القرار النهائي لاستكمال إجراءات التعاقد' : 'You will be notified once decision is finalized'),
     },
   ];
 
@@ -233,12 +287,12 @@ export default function ClientPortalPage() {
 
                 <div className="flex justify-between py-1.5 border-b border-border">
                   <span className="text-text-muted">{language === 'ar' ? 'فترة السداد' : 'Tenure'}:</span>
-                  <span className="font-bold text-text-primary">36 {t('unit.months')}</span>
+                  <span className="font-bold text-text-primary">{tenure} {t('unit.months')}</span>
                 </div>
 
                 <div className="flex justify-between py-1.5">
                   <span className="text-text-muted">{t('portal.monthlyInstallment')}:</span>
-                  <span className="font-bold text-text-primary">~ 41,200 {t('currency.egp')}</span>
+                  <span className="font-bold text-brand-navy">~ {formatCurrency(monthlyEst)}</span>
                 </div>
               </div>
             </Card>
