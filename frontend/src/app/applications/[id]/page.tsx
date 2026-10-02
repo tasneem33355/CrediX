@@ -42,6 +42,8 @@ import {
   fetchApplicationById,
   runScoringPipeline,
   submitOfficerDecision,
+  fetchApplicationAnalytics,
+  type ApplicationAnalytics,
 } from '@/lib/api';
 
 // Empty placeholder; the page shows a loading screen until the real application arrives.
@@ -134,6 +136,20 @@ export default function ApplicationDetailPage() {
     };
   }, [appId, session]);
 
+  // Risk & scenario analytics (re-fetched after scoring or a decision changes the application)
+  const [analytics, setAnalytics] = useState<ApplicationAnalytics | null>(null);
+  const [analyticsError, setAnalyticsError] = useState(false);
+
+  useEffect(() => {
+    if (isDemoMode || !session?.access_token) return;
+    let cancelled = false;
+    setAnalyticsError(false);
+    fetchApplicationAnalytics(appId, session.access_token)
+      .then((data) => { if (!cancelled) setAnalytics(data); })
+      .catch(() => { if (!cancelled) setAnalyticsError(true); });
+    return () => { cancelled = true; };
+  }, [appId, session?.access_token, application.creditScore, application.status]);
+  
   // Execute full scoring pipeline (Fraud + Credit Risk + LLM Explainer)
   const handleRunAiScoring = async () => {
     setIsScoringLoading(true);
@@ -208,15 +224,9 @@ export default function ApplicationDetailPage() {
 
   // Dynamic Micro-Analytics calculations from live application & bank summary
   const bankSummary = (application as any).bankSummary || (application as any).bank_summary || {};
-  const declaredSalary = Number(bankSummary.declared_net_salary) || 0;
-  const verifiedBankInflow = Number(bankSummary.monthly_average) || 0;
-  const requestedLoan = Number(application.requestedAmount) || 0;
-  const tenureMonths = Number((application as any).tenureMonths || (application as any).tenure_months) || 36;
-  const baseMonthlyInstallment = Math.round((requestedLoan / tenureMonths) * 1.18);
-  const dbrDeclared = declaredSalary > 0 ? ((baseMonthlyInstallment / declaredSalary) * 100).toFixed(1) : '—';
-  const dbrVerified = verifiedBankInflow > 0 ? ((baseMonthlyInstallment / verifiedBankInflow) * 100).toFixed(1) : '—';
-  const applicantPd = (application as any).pdProbability ? Number((application as any).pdProbability) : 0;
-  const applicantEcl = Math.round(requestedLoan * applicantPd * 0.45);
+  const an = analytics;
+  const money = (v: number | null | undefined) => (v === null || v === undefined ? '—' : formatCurrency(v));
+  const pct1 = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v.toFixed(1)}%`);
 
   if (isLoadingApp || loadError) {
     return (
@@ -596,7 +606,7 @@ export default function ApplicationDetailPage() {
                     score={application.creditScore}
                     maxScore={850}
                     label={(application as any).ratingGrade || (language === 'ar' ? 'جدارة منخفضة المخاطر (Grade B)' : 'Grade B (Low Risk)')}
-                    sublabel={`PD: ${((applicantPd) * 100).toFixed(2)}%`}
+                    sublabel={an?.pd != null ? `PD: ${(an.pd * 100).toFixed(2)}%` : ''}
                     size="lg"
                   />
                 ) : (
@@ -680,17 +690,38 @@ export default function ApplicationDetailPage() {
 
         {/* TAB 3: Specific Micro-Analytics & Sensitivity Scenarios */}
         {activeTab === 'microAnalytics' && (
+          analyticsError ? (
+            <div className="p-4 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-xs">
+              {language === 'ar' ? 'تعذر تحميل التحليلات.' : 'Could not load analytics.'}
+            </div>
+          ) : !an ? (
+            <p className="text-xs text-text-muted text-center py-12">
+              {language === 'ar' ? 'جاري تحميل التحليلات...' : 'Loading analytics...'}
+            </p>
+          ) : (
           <div className="space-y-6">
-            {/* Section 1: Micro Benchmark vs Bank Portfolio */}
+            {!an.has_scoring && (
+              <div className="p-3 rounded-xl bg-semantic-warning-subtle/40 border border-semantic-warning/30 text-xs text-semantic-warning">
+                {language === 'ar'
+                  ? 'لم يتم تشغيل التقييم الذكي بعد، لذلك مؤشرات الـ PD والخسارة المتوقعة غير متاحة.'
+                  : 'AI scoring has not run yet, so PD and expected loss are not available.'}
+              </div>
+            )}
+
+            {/* Section 1: Risk indicators */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <Card className="p-5 space-y-2 text-start">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-text-muted">احتمالية تعثر العميل (PD)</span>
                   <Badge variant="neutral">العميل</Badge>
                 </div>
-                <p className="text-2xl font-bold text-text-primary">5.24%</p>
+                <p className="text-2xl font-bold text-text-primary">
+                  {an.pd !== null ? `${(an.pd * 100).toFixed(2)}%` : '—'}
+                </p>
                 <p className="text-[11px] text-text-secondary">
-                  مقارنة بمتوسط المحفظة البنكية: <strong className="text-brand-navy">4.82%</strong>
+                  {an.portfolio_avg_pd !== null
+                    ? <>مقارنة بمتوسط المحفظة (القرارات المسجلة): <strong className="text-brand-navy">{(an.portfolio_avg_pd * 100).toFixed(2)}%</strong></>
+                    : 'لا توجد قرارات مسجلة كافية لحساب متوسط المحفظة'}
                 </p>
               </Card>
 
@@ -699,17 +730,19 @@ export default function ApplicationDetailPage() {
                   <span className="text-xs font-medium text-text-muted">الخسارة الائتمانية المتوقعة (ECL)</span>
                   <Badge variant="neutral">تقديري</Badge>
                 </div>
-                <p className="text-2xl font-bold text-brand-navy">{formatCurrency(applicantEcl)}</p>
-                <p className="text-[11px] text-text-secondary">محسوبة على أساس معدل تعافي (LGD) بنسبة 45%</p>
+                <p className="text-2xl font-bold text-brand-navy">{money(an.expected_loss)}</p>
+                <p className="text-[11px] text-text-secondary">
+                  محسوبة على أساس معدل خسارة عند التعثر (LGD) بنسبة {(an.lgd * 100).toFixed(0)}%
+                </p>
               </Card>
 
               <Card className="p-5 space-y-2 text-start">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-text-muted">تصنيف الجدارة الائتمانية</span>
-                  <Badge variant="success">منخفض المخاطر</Badge>
+                  {an.decision && <Badge variant="neutral">{an.decision}</Badge>}
                 </div>
-                <p className="text-2xl font-bold text-semantic-success">Grade A/B</p>
-                <p className="text-[11px] text-text-secondary">ضمن الشريحة الأولى المسموح بتمويلها للأفراد</p>
+                <p className="text-2xl font-bold text-text-primary">{an.risk_tier || '—'}</p>
+                <p className="text-[11px] text-text-secondary">التصنيف والقرار كما رجعا من نموذج المخاطر</p>
               </Card>
             </div>
 
@@ -722,32 +755,42 @@ export default function ApplicationDetailPage() {
                     : 'Real Debt Burden Ratio (DBR) Stress Analysis'}
                 </h3>
                 <p className="text-xs text-text-muted mt-0.5">
-                  مقارنة التزام القسط الشهري ({formatCurrency(baseMonthlyInstallment)}) بالدخل المعلن مقابل التدفق البنكي الفعلي
+                  مقارنة القسط الشهري ({money(an.monthly_installment)} بفائدة {an.annual_rate_pct}%) بالدخل المعلن مقابل التدفق البنكي الفعلي
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="p-4 rounded-xl bg-surface-subtle border border-border space-y-2">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-text-primary">1. بناءً على صافي الراتب المعلن (22,880 ج.م)</span>
-                    <Badge variant="success">{dbrDeclared}% DBR</Badge>
+                    <span className="font-bold text-text-primary">1. بناءً على صافي الراتب المعلن ({money(an.declared_salary)})</span>
+                    <Badge variant={an.dbr_declared !== null && an.dbr_declared > 50 ? 'danger' : 'success'}>{pct1(an.dbr_declared)} DBR</Badge>
                   </div>
-                  <ProgressBar value={Math.min(Number(dbrDeclared) || 0, 100)} color="emerald" size="md" />
+                  <ProgressBar value={Math.min(an.dbr_declared ?? 0, 100)} color={an.dbr_declared !== null && an.dbr_declared > 50 ? 'rose' : 'emerald'} size="md" />
                   <p className="text-[11px] text-text-secondary">
-                    ضمن الحد الائتماني الآمن المسموح به من البنك المركزي المصري (الحد الأقصى 50%).
+                    {an.dbr_declared === null
+                      ? 'لا تتوفر بيانات كافية لحساب النسبة.'
+                      : an.dbr_declared > 50
+                      ? 'تتجاوز الحد المرجعي (50%) على أساس الدخل المعلن.'
+                      : 'ضمن الحد المرجعي (50%) على أساس الدخل المعلن.'}
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-semantic-error-subtle/50 border border-semantic-error/40 space-y-2">
                   <div className="flex justify-between items-center text-xs">
                     <span className="font-bold text-semantic-error">
-                      2. بناءً على التدفق البنكي الفعلي (2,998.5 ج.م)
+                      2. بناءً على التدفق البنكي الفعلي ({money(an.verified_inflow)})
                     </span>
-                    <Badge variant="danger">{dbrVerified}% DBR</Badge>
+                    <Badge variant="danger">{pct1(an.dbr_verified)} DBR</Badge>
                   </div>
-                  <ProgressBar value={100} color="rose" size="md" />
+                  <ProgressBar value={Math.min(an.dbr_verified ?? 0, 100)} color="rose" size="md" />
                   <p className="text-[11px] text-semantic-error font-medium">
-                    خطر حرج: في حال كان التدفق البنكي هو الدخل الوحيد، فإن القسط سيتجاوز كامل الدخل الشهري للعميل!
+                    {an.dbr_verified === null
+                      ? 'لا تتوفر بيانات كافية لحساب النسبة.'
+                      : an.dbr_verified > 100
+                      ? 'في حال كان التدفق البنكي هو الدخل الوحيد، فإن القسط سيتجاوز كامل الدخل الشهري للعميل.'
+                      : an.dbr_verified > 50
+                      ? 'تتجاوز الحد المرجعي (50%) على أساس التدفق البنكي الفعلي.'
+                      : 'ضمن الحد المرجعي (50%) على أساس التدفق البنكي الفعلي.'}
                   </p>
                 </div>
               </div>
@@ -762,36 +805,33 @@ export default function ApplicationDetailPage() {
                       ? 'محاكاة حساسية رفع الفائدة للقرض (Interest Rate Sensitivity)'
                       : 'Interest Rate Hike Sensitivity Simulation'}
                   </h3>
-                  <p className="text-xs text-text-muted mt-0.5">تأثير صعود الفائدة على قيمة القسط الشهري والقدرة على السداد</p>
+                  <p className="text-xs text-text-muted mt-0.5">تأثير صعود الفائدة على قيمة القسط الشهري</p>
                 </div>
                 <TrendingUp className="w-5 h-5 text-brand-navy" />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div className="p-3.5 bg-surface-subtle rounded-xl border border-border space-y-1">
-                  <span className="text-[11px] text-text-muted">الوضع الحالي (Baseline)</span>
-                  <p className="text-sm font-bold text-text-primary">{formatCurrency(baseMonthlyInstallment)} / شهر</p>
-                  <span className="text-[10px] text-semantic-success">فائدة 18%</span>
+              {an.rate_scenarios.length === 0 ? (
+                <p className="text-xs text-text-muted">لا يمكن حساب السيناريوهات بدون مبلغ ومدة تمويل صحيحين.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  {an.rate_scenarios.map((s) => (
+                    <div
+                      key={s.bps}
+                      className={`p-3.5 rounded-xl border space-y-1 ${
+                        s.bps === 300 ? 'bg-semantic-warning-subtle/40 border-semantic-warning/30' : 'bg-surface-subtle border-border'
+                      }`}
+                    >
+                      <span className="text-[11px] text-text-muted">
+                        {s.bps === 0 ? 'الوضع الحالي (Baseline)' : `رفع الفائدة +${s.bps} نقطة أساس`}
+                      </span>
+                      <p className="text-sm font-bold text-text-primary">{formatCurrency(s.installment)} / شهر</p>
+                      <span className="text-[10px] text-text-secondary">
+                        فائدة {s.rate_pct}%{s.bps > 0 ? ` (+${formatCurrency(s.delta)})` : ''}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-
-                <div className="p-3.5 bg-surface-subtle rounded-xl border border-border space-y-1">
-                  <span className="text-[11px] text-text-muted">رفع الفائدة +100 نقطة أساس</span>
-                  <p className="text-sm font-bold text-text-primary">{formatCurrency(baseMonthlyInstallment + 85)} / شهر</p>
-                  <span className="text-[10px] text-text-secondary">فائدة 19% (+85 ج.م)</span>
-                </div>
-
-                <div className="p-3.5 bg-surface-subtle rounded-xl border border-border space-y-1">
-                  <span className="text-[11px] text-text-muted">رفع الفائدة +200 نقطة أساس</span>
-                  <p className="text-sm font-bold text-text-primary">{formatCurrency(baseMonthlyInstallment + 172)} / شهر</p>
-                  <span className="text-[10px] text-semantic-warning">فائدة 20% (+172 ج.م)</span>
-                </div>
-
-                <div className="p-3.5 bg-semantic-warning-subtle/40 rounded-xl border border-semantic-warning/30 space-y-1">
-                  <span className="text-[11px] text-semantic-warning font-bold">رفع الفائدة +300 نقطة أساس</span>
-                  <p className="text-sm font-bold text-brand-navy">{formatCurrency(baseMonthlyInstallment + 260)} / شهر</p>
-                  <span className="text-[10px] text-semantic-warning font-medium">فائدة 21% (+260 ج.م)</span>
-                </div>
-              </div>
+              )}
             </Card>
 
             {/* Section 4: Existing Bureau Facilities Breakdown */}
@@ -804,62 +844,52 @@ export default function ApplicationDetailPage() {
                       : 'Existing Bureau Facilities (I-Score)'}
                   </h3>
                   <p className="text-xs text-text-muted mt-0.5">
-                    إجمالي الرصيد القائم: 1,230,000 ج.م • إجمالي المتأخرات: 16,200 ج.م • بطاقات ائتمان: 2
+                    إجمالي الرصيد القائم: {money(an.bureau.total_outstanding)} • إجمالي المتأخرات: {money(an.bureau.total_overdue)} • بطاقات ائتمان: {an.bureau.active_cards ?? '—'}
                   </p>
                 </div>
                 <Layers className="w-5 h-5 text-brand-navy" />
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-start">
-                  <thead>
-                    <tr className="border-b border-border text-text-muted font-semibold">
-                      <th className="py-2.5 px-3">نوع التسهيل</th>
-                      <th className="py-2.5 px-3">المبلغ الممنوح</th>
-                      <th className="py-2.5 px-3">الرصيد القائم</th>
-                      <th className="py-2.5 px-3">القسط الشهري</th>
-                      <th className="py-2.5 px-3">الحالة / الصفة</th>
-                      <th className="py-2.5 px-3">أيام التأخير</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    <tr>
-                      <td className="py-2.5 px-3 font-bold text-text-primary">قرض أصحاب المعاشات</td>
-                      <td className="py-2.5 px-3">950,000 ج.م</td>
-                      <td className="py-2.5 px-3 font-semibold text-brand-navy">400,000 ج.م</td>
-                      <td className="py-2.5 px-3">12,000 ج.م</td>
-                      <td className="py-2.5 px-3"><Badge variant="neutral">مفترض</Badge></td>
-                      <td className="py-2.5 px-3 text-semantic-success font-bold">0</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-3 font-bold text-text-primary">البطاقة الائتمانية</td>
-                      <td className="py-2.5 px-3">950,000 ج.م</td>
-                      <td className="py-2.5 px-3 font-semibold text-brand-navy">400,000 ج.م</td>
-                      <td className="py-2.5 px-3">12,000 ج.م</td>
-                      <td className="py-2.5 px-3"><Badge variant="neutral">تابع</Badge></td>
-                      <td className="py-2.5 px-3 text-semantic-success font-bold">0</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-3 font-bold text-text-primary">جاري مدين</td>
-                      <td className="py-2.5 px-3">950,000 ج.م</td>
-                      <td className="py-2.5 px-3 font-semibold text-brand-navy">400,000 ج.م</td>
-                      <td className="py-2.5 px-3">12,000 ج.م</td>
-                      <td className="py-2.5 px-3"><Badge variant="warning">ضامن (إجراء قضائي)</Badge></td>
-                      <td className="py-2.5 px-3 text-semantic-success font-bold">0</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-3 font-bold text-text-primary">قرض نقدي</td>
-                      <td className="py-2.5 px-3">-</td>
-                      <td className="py-2.5 px-3">-</td>
-                      <td className="py-2.5 px-3">5,400 ج.م</td>
-                      <td className="py-2.5 px-3"><Badge variant="danger">متأخر 60 يوماً</Badge></td>
-                      <td className="py-2.5 px-3 text-semantic-error font-bold">60 يوماً</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              {an.bureau.facilities.length === 0 ? (
+                <p className="text-xs text-text-muted">لا توجد تسهيلات قائمة في تقرير الآي سكور المستخرج.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-start">
+                    <thead>
+                      <tr className="border-b border-border text-text-muted font-semibold">
+                        <th className="py-2.5 px-3">نوع التسهيل</th>
+                        <th className="py-2.5 px-3">المبلغ الممنوح</th>
+                        <th className="py-2.5 px-3">الرصيد القائم</th>
+                        <th className="py-2.5 px-3">القسط الشهري</th>
+                        <th className="py-2.5 px-3">الحالة / الصفة</th>
+                        <th className="py-2.5 px-3">أيام التأخير</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {an.bureau.facilities.map((f, i) => (
+                        <tr key={i}>
+                          <td className="py-2.5 px-3 font-bold text-text-primary">{f.facility_type || '—'}</td>
+                          <td className="py-2.5 px-3">{money(f.granted_amount)}</td>
+                          <td className="py-2.5 px-3 font-semibold text-brand-navy">{money(f.outstanding_amount)}</td>
+                          <td className="py-2.5 px-3">{money(f.installment_amount)}</td>
+                          <td className="py-2.5 px-3">
+                            <div className="flex flex-wrap gap-1">
+                              {f.status && <Badge variant="neutral">{f.status}</Badge>}
+                              {f.legal_action_flag && <Badge variant="warning">إجراء قضائي</Badge>}
+                            </div>
+                          </td>
+                          <td className={`py-2.5 px-3 font-bold ${f.overdue_days && f.overdue_days > 0 ? 'text-semantic-error' : 'text-text-muted'}`}>
+                            {f.overdue_days !== null ? f.overdue_days : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </Card>
           </div>
+          )
         )}
 
         {/* TAB 4: Fraud Detection & Income Discrepancy */}
