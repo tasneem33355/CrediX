@@ -116,6 +116,17 @@ export async function fetchAuditTrail(appId: string, token?: string) {
   return res.json();
 }
 
+export async function deleteApplication(appId: string, token?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/applications/${appId}`, {
+    method: 'DELETE',
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to delete application (${res.status})`);
+  }
+}
+
 export interface FraudCase {
   id: string;
   clientName: string;
