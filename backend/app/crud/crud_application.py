@@ -9,7 +9,8 @@ from app.database import new_id
 from app.models.application import DecisionAudit, Document, LoanApplication, TimelineEvent
 from app.models.user import User
 from app.schemas.application import LoanApplicationCreate, LoanApplicationUpdate
-from app.models.portfolio import LoanFacility
+from app.models.portfolio import DecisionAuditLog, LoanFacility
+from app.models.case import CaseCard
 from app.crud.crud_case import sync_case_card
 
 class DecisionConflict(Exception):
@@ -345,6 +346,9 @@ def delete_application(db: Session, app_id: str, actor: Optional[User] = None) -
         db, application_id=app_id, action="deleted", actor=actor, previous_status=db_app.status,
         snapshot={"applicant_name": db_app.applicant_name, "national_id": db_app.national_id},
     )
+    db.query(CaseCard).filter(CaseCard.application_id == app_id).delete(synchronize_session=False)
+    db.query(LoanFacility).filter(LoanFacility.application_id == app_id).delete(synchronize_session=False)
+    db.query(DecisionAuditLog).filter(DecisionAuditLog.application_id == app_id).delete(synchronize_session=False)
     db.delete(db_app)
     db.commit()
     return True
