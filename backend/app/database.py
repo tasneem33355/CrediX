@@ -1,9 +1,11 @@
 """SQLAlchemy Database Engine and Session Management."""
 
 import secrets
+import os
 from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.pool import NullPool
 from app.config import settings
 
 # SQLite remains supported for isolated automated tests.
@@ -14,6 +16,12 @@ if settings.DATABASE_URL.startswith("sqlite"):
 engine_options = {"connect_args": connect_args, "echo": False}
 if not settings.DATABASE_URL.startswith("sqlite"):
     engine_options["pool_pre_ping"] = True
+    # Safe with Supabase's transaction pooler (pgbouncer): no server-side prepared statements.
+    connect_args["prepare_threshold"] = None
+    connect_args["connect_timeout"] = 10
+    # Serverless: every invocation is short-lived, so let the Supabase pooler own the pooling.
+    if os.getenv("VERCEL"):
+        engine_options["poolclass"] = NullPool
 
 engine = create_engine(settings.DATABASE_URL, **engine_options)
 
