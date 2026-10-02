@@ -222,6 +222,50 @@ export async function moveCase(
   return res.json();
 }
 
+export interface BureauFacility {
+  facility_type: string | null;
+  lender_name: string | null;
+  granted_amount: number | null;
+  outstanding_amount: number | null;
+  installment_amount: number | null;
+  status: string | null;
+  overdue_days: number | null;
+  overdue_amount: number | null;
+  legal_action_flag: boolean;
+}
+
+export interface ApplicationAnalytics {
+  has_scoring: boolean;
+  pd: number | null;
+  portfolio_avg_pd: number | null;
+  lgd: number;
+  expected_loss: number | null;
+  risk_tier: string | null;
+  decision: string | null;
+  annual_rate_pct: number;
+  monthly_installment: number | null;
+  declared_salary: number | null;
+  verified_inflow: number | null;
+  dbr_declared: number | null;
+  dbr_verified: number | null;
+  rate_scenarios: { bps: number; rate_pct: number; installment: number; delta: number }[];
+  bureau: {
+    total_outstanding: number | null;
+    total_overdue: number | null;
+    max_days_past_due: number | null;
+    active_cards: number | null;
+    facilities: BureauFacility[];
+  };
+}
+
+export async function fetchApplicationAnalytics(appId: string, token?: string): Promise<ApplicationAnalytics> {
+  const res = await fetch(`${API_BASE}/applications/${appId}/analytics`, { headers: getHeaders(token) });
+  if (!res.ok) {
+    throw new Error(`Failed to load analytics (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function fetchExtractions(appId: string, token?: string) {
   const res = await fetch(`${API_BASE}/ocr/applications/${appId}/extractions`, {
     headers: getHeaders(token),
