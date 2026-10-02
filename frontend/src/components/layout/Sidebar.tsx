@@ -35,13 +35,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t, direction, language } = useLanguage();
   const sidebarRef = useRef<HTMLElement>(null);
 
-  const navItems = [
-    {
-      id: 'dashboard',
-      label: t('nav.dashboard'),
-      href: '/dashboard',
-      icon: LayoutDashboard,
-    },
+  const navItems: {
+    id: string;
+    label: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: number;
+  }[] = [
+
     {
       id: 'applications',
       label: t('nav.applications'),
