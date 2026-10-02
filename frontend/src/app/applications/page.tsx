@@ -12,6 +12,7 @@ import {
   FilePlus,
   RefreshCw,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuth } from '@/context/AuthContext';
@@ -21,7 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { mockApplications } from '@/data/mockData';
-import { fetchApplicationsList } from '@/lib/api';
+import { fetchApplicationsList, deleteApplication } from '@/lib/api';
 import { isDemoMode } from '@/lib/config';
 import type { ApplicationStatus } from '@/types';
 
@@ -136,6 +137,30 @@ export default function ApplicationsPage() {
     void load();
   }, [load]);
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (appId: string) => {
+    const confirmed = window.confirm(
+      language === 'ar'
+        ? `هل أنت متأكد من حذف الطلب ${appId} نهائياً؟ سيتم مسح كل بياناته من النظام ولا يمكن التراجع.`
+        : `Delete application ${appId} permanently? All its data will be removed and this cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeletingId(appId);
+    try {
+      await deleteApplication(appId, token);
+      if (apps.length === 1 && currentPage > 1) {
+        setCurrentPage((p) => p - 1);
+      } else {
+        await load();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : language === 'ar' ? 'تعذر حذف الطلب' : 'Could not delete the application');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+  
   // Debounce search input → searchQuery
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -364,11 +389,24 @@ export default function ApplicationsPage() {
                       </td>
                       <td className="py-4 px-6 text-center">{getStatusBadge(app.status)}</td>
                       <td className="py-4 px-6 text-center">
-                        <Link href={`/applications/${app.id}`}>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="w-4 h-4 text-text-muted" />
-                          </Button>
-                        </Link>
+                        <div className="flex items-center justify-center gap-1">
+                          <Link href={`/applications/${app.id}`}>
+                            <Button variant="ghost" size="sm">
+                              <MoreHorizontal className="w-4 h-4 text-text-muted" />
+                            </Button>
+                          </Link>
+                          {!isDemoMode && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(app.id)}
+                              disabled={deletingId === app.id}
+                              title={language === 'ar' ? 'حذف الطلب' : 'Delete application'}
+                              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-40 cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
