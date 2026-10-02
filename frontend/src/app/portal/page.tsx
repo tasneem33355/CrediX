@@ -29,7 +29,7 @@ import { isDemoMode } from '@/lib/config';
 
 export default function ClientPortalPage() {
   const { t, language, formatCurrency, toggleLanguage, direction } = useLanguage();
-  const { logout } = useAuth();
+  const { logout, session } = useAuth();
   const router = useRouter();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
@@ -38,34 +38,38 @@ export default function ClientPortalPage() {
     router.push('/auth/login');
   };
 
-  const [appData, setAppData] = React.useState<any>(mockApplications[0]);
+  const [appData, setAppData] = React.useState<any>(isDemoMode ? mockApplications[0] : null);
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
+    if (isDemoMode) {
+      setIsLoading(false);
+      return;
+    }
+    if (!session?.access_token) return;
     let isMounted = true;
     async function loadClientApp() {
-      if (isDemoMode) {
-        setIsLoading(false);
-        return;
-      }
       try {
-        const apps = await fetchApplicationsList({ limit: 1 });
+        // The backend returns only this client's own applications, newest first.
+        const apps = await fetchApplicationsList({ limit: 1 }, session?.access_token);
         if (isMounted && Array.isArray(apps) && apps.length > 0) {
           const raw = apps[0] as any;
           setAppData({
             id: raw.id,
-            applicantName: raw.applicant_name ?? raw.applicantName ?? 'العميل',
-            applicantNameEn: raw.applicant_name_en ?? raw.applicantNameEn ?? 'Applicant',
-            requestedAmount: Number(raw.requested_amount ?? raw.requestedAmount ?? 100000),
-            loanTypeLabel: raw.loan_type_label ?? raw.loanTypeLabel ?? 'تمويل شخصي',
-            loanTypeLabelEn: raw.loan_type_label_en ?? raw.loanTypeLabelEn ?? 'Personal Financing',
+            applicantName: raw.applicant_name ?? raw.applicantName ?? '',
+            applicantNameEn: raw.applicant_name_en ?? raw.applicantNameEn ?? raw.applicant_name ?? '',
+            requestedAmount: Number(raw.requested_amount ?? raw.requestedAmount ?? 0),
+            loanTypeLabel: raw.loan_type_label ?? raw.loanTypeLabel ?? '',
+            loanTypeLabelEn: raw.loan_type_label_en ?? raw.loanTypeLabelEn ?? '',
             status: raw.status ?? 'under_review',
             tenureMonths: raw.tenure_months ?? raw.tenureMonths ?? 36,
-            documents: raw.documents && raw.documents.length > 0 ? raw.documents : mockApplications[0].documents,
+            documents: raw.documents ?? [],
           });
+        } else if (isMounted) {
+          setAppData(null);
         }
       } catch {
-        // Fallback to seeded demo app
+        if (isMounted) setAppData(null);
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -74,9 +78,12 @@ export default function ClientPortalPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [session]);
 
-  const myApp = appData;
+  const myApp = appData ?? {
+    id: '', status: 'under_review', tenureMonths: 36, requestedAmount: 0, documents: [],
+    applicantName: '', applicantNameEn: '', loanTypeLabel: '', loanTypeLabelEn: '',
+  };
   const isApproved = myApp.status === 'approved';
   const isRejected = myApp.status === 'rejected';
 
@@ -129,6 +136,32 @@ export default function ClientPortalPage() {
         : (language === 'ar' ? 'سيتم إشعارك فور إصدار القرار النهائي لاستكمال إجراءات التعاقد' : 'You will be notified once decision is finalized'),
     },
   ];
+
+  if (isLoading || !appData) {
+    return (
+      <RequireRole allowedRole="client">
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background text-text-primary text-sm p-6 text-center">
+          {isLoading ? (
+            <p>{language === 'ar' ? 'جاري تحميل طلبك...' : 'Loading your application...'}</p>
+          ) : (
+            <>
+              <p>{language === 'ar' ? 'لا يوجد طلب تمويل مسجّل بعد.' : 'You have no financing application yet.'}</p>
+              <button
+                type="button"
+                onClick={() => router.push('/apply')}
+                className="px-5 py-2.5 rounded-xl bg-brand-navy text-white text-xs font-bold cursor-pointer"
+              >
+                {language === 'ar' ? 'قدّم طلب تمويل' : 'Apply for financing'}
+              </button>
+              <button type="button" onClick={handleLogout} className="text-xs text-text-muted underline cursor-pointer">
+                {language === 'ar' ? 'تسجيل الخروج' : 'Log out'}
+              </button>
+            </>
+          )}
+        </div>
+      </RequireRole>
+    );
+  }
 
   return (
     <RequireRole allowedRole="client">
@@ -301,7 +334,9 @@ export default function ClientPortalPage() {
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <h3 className="text-sm font-bold text-text-primary">{t('portal.myDocuments')}</h3>
-                <span className="text-xs text-text-muted">4 مستندات</span>
+                <span className="text-xs text-text-muted">
+                  {(myApp.documents || []).length} {language === 'ar' ? 'مستندات' : 'documents'}
+                </span>               
               </div>
 
               <div className="space-y-2.5 text-xs">
