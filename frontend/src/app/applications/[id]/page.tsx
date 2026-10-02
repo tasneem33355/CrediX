@@ -426,42 +426,20 @@ export default function ApplicationDetailPage() {
             </button>
 
             {showExplanation && (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2.5 animate-in fade-in duration-200">
-                <div className="p-3 bg-semantic-error-subtle/40 rounded-xl border border-semantic-error/30 text-xs text-text-primary space-y-1 text-start">
-                  <div className="flex items-center gap-1.5 font-bold text-semantic-error">
-                    <span className="w-1.5 h-1.5 rounded-full bg-semantic-error" />
-                    <span>{language === 'ar' ? '1. تناقض حاد في بيانات الدخل' : '1. Severe Income Discrepancy'}</span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-text-secondary">
-                    {language === 'ar'
-                      ? 'صافي الراتب المعلن بالشهادة (22,880 ج.م) يفوق متوسط التدفق البنكي (2,998.5 ج.م) بـ 7.6 أضعاف.'
-                      : 'Declared net salary (22,880 EGP) is 7.6x higher than average monthly bank net inflow (2,998.5 EGP).'}
+              <div className="mt-3 grid grid-cols-1 gap-2.5">
+                {(application.recommendationReasons ?? []).length === 0 ? (
+                  <p className="text-xs text-text-muted">
+                    {language === 'ar' ? 'لم يتم تشغيل التقييم بعد.' : 'Scoring has not run yet.'}
                   </p>
-                </div>
-
-                <div className="p-3 bg-surface-subtle rounded-xl border border-border text-xs text-text-primary space-y-1 text-start">
-                  <div className="flex items-center gap-1.5 font-bold text-brand-navy">
-                    <span className="w-1.5 h-1.5 rounded-full bg-brand-navy" />
-                    <span>{language === 'ar' ? '2. تقرير I-Score الائتماني' : '2. I-Score Credit Profile'}</span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-text-secondary">
-                    {language === 'ar'
-                      ? 'درجة الائتمان 780، ومعدل احتمالية التعثر الأساسي (PD) منخفض 5.24%، مع رصد عدم تطابق في صيغة الاسم.'
-                      : 'Credit Score is 780 with low baseline PD 5.24%, but with customer name mismatch detected.'}
-                  </p>
-                </div>
-
-                <div className="p-3 bg-surface-subtle rounded-xl border border-border text-xs text-text-primary space-y-1 text-start">
-                  <div className="flex items-center gap-1.5 font-bold text-semantic-warning">
-                    <span className="w-1.5 h-1.5 rounded-full bg-semantic-warning" />
-                    <span>{language === 'ar' ? '3. التوصية التنفيذية' : '3. Executive Recommendation'}</span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-text-secondary">
-                    {language === 'ar'
-                      ? 'يوصى بالمراجعة البشرية وإلزام العميل بتقديم كشف حساب مصرفي مفصل يثبت تحويل الراتب قبل الاعتماد.'
-                      : 'Manual review required; request updated bank statement proving salary transfer.'}
-                  </p>
-                </div>
+                ) : (
+                  application.recommendationReasons.map((r, i) => (
+                    <div key={i} className="p-3 bg-surface-subtle rounded-xl border border-border text-start">
+                      <p className="text-[11px] leading-relaxed text-text-secondary whitespace-pre-line">
+                        {language === 'ar' ? r.ar : r.en}
+                      </p>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
@@ -485,26 +463,23 @@ export default function ApplicationDetailPage() {
                   </div>
                   <div className="flex items-center gap-1.5 px-3 py-1 bg-[#E8EEF5] text-brand-navy rounded-full border border-brand-navy/20 text-xs font-bold">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{t('ocr.accuracy')} 97.4%</span>
+                    <span>{t('ocr.accuracy')} {application.ocrAccuracy != null ? `${application.ocrAccuracy}%` : '—'}</span>
                   </div>
                 </div>
 
-                {/* Critical Income Discrepancy Alert Banner */}
-                <div className="p-4 rounded-xl bg-semantic-error-subtle/50 border border-semantic-error/40 flex items-start gap-3 text-start">
-                  <ShieldAlert className="w-5 h-5 text-semantic-error shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold text-semantic-error">
-                      {language === 'ar'
-                        ? 'تنبيه تدقيق مالي: رصد فجوة بنسبة 7.6 أضعاف بين الراتب وكشف الحساب'
-                        : 'Audit Warning: 7.6x discrepancy detected between declared salary and bank inflow'}
-                    </p>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">
-                      {language === 'ar'
-                        ? 'صافي الراتب بشهادة الراتب (22,880 ج.م) في حين أن متوسط الإيداعات الشهرية بكشف حساب بنك المشرق هو (2,998.5 ج.م). التدفق البنكي يغطي 13.1% فقط من الراتب المعلن.'
-                        : 'Declared net salary on certificate (22,880 EGP) vs Mashreq Bank monthly inflow (2,998.5 EGP). Inflow covers only 13.1% of declared salary.'}
-                    </p>
-                  </div>
-                </div>
+                {(() => {
+                  const sig = application.fraudSignals?.find((s) => s.id === 'sig_critical_income_discrepancy');
+                  if (!sig) return null;
+                  return (
+                    <div className="p-4 rounded-xl bg-semantic-error-subtle/50 border border-semantic-error/40 flex items-start gap-3 text-start">
+                      <ShieldAlert className="w-5 h-5 text-semantic-error shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-semantic-error">{language === 'ar' ? sig.title : sig.titleEn}</p>
+                        <p className="text-[11px] text-text-secondary leading-relaxed">{language === 'ar' ? sig.evidence : sig.evidenceEn}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Extracted Data Fields Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -538,7 +513,7 @@ export default function ApplicationDetailPage() {
                       {language === 'ar' ? 'البنك المصدر لكشف الحساب' : 'Issuing Bank'}
                     </span>
                     <p className="text-sm font-bold text-text-primary">
-                      {bankSummary.bank_name || (language === 'ar' ? 'بنك المشرق' : 'Mashreq Bank')}
+                      {bankSummary.bank_name || '—'}
                     </p>
                   </div>
 
@@ -547,7 +522,7 @@ export default function ApplicationDetailPage() {
                       {language === 'ar' ? 'صافي الراتب المعلن بالشهادة' : 'Declared Net Salary'}
                     </span>
                     <p className="text-sm font-bold text-brand-navy">
-                      {bankSummary.declared_net_salary ? `${Number(bankSummary.declared_net_salary).toLocaleString()} ج.م` : '22,880.00 ج.م'}
+                      {bankSummary.declared_net_salary ? `${Number(bankSummary.declared_net_salary).toLocaleString()} ج.م` : '—'}
                     </p>
                   </div>
 
@@ -556,7 +531,7 @@ export default function ApplicationDetailPage() {
                       {language === 'ar' ? 'متوسط التدفق البنكي الفعلي' : 'Average Bank Net Inflow'}
                     </span>
                     <p className="text-sm font-bold text-semantic-error">
-                      {bankSummary.monthly_average ? `${Number(bankSummary.monthly_average).toLocaleString()} ج.م` : '2,998.50 ج.م'}
+                      {bankSummary.monthly_average ? `${Number(bankSummary.monthly_average).toLocaleString()} ج.م` : '—'}
                     </p>
                   </div>
                 </div>
@@ -666,8 +641,10 @@ export default function ApplicationDetailPage() {
 
               {/* LLM Narrative */}
               <div className="p-4 rounded-xl bg-surface-subtle border border-border text-start space-y-2">
-                <p className="text-xs text-text-primary leading-relaxed">
-                  بناءً على التقييم الائتماني لبيانات الطلب، يحظى العميل بدرجة جدارة ائتمانية مرتفعة على مؤشر الآي سكور (780)، مع احتمالية تعثر نموذجية تبلغ 5.24% وتاريخ سداد خالٍ من حالات التعثر القانوني. ومع ذلك، يرصد النظام <strong>فجوة جوهرية في الدخل</strong> حيث لا يتجاوز التدفق البنكي الشهري الفعلي (2,998.5 ج.م) ما نسبته 13% من الراتب المعلن (22,880 ج.م). لذا يُوصى بعدم تفعيل الموافقة التلقائية وتحويل المعاملة إلى <strong>المراجعة البشرية</strong> للتحقق من طريقة استلام الراتب وتحديث مستندات التحقق المالي.
+                <p className="text-xs text-text-primary leading-relaxed whitespace-pre-line">
+                  {application.recommendationReasons?.length
+                  ? application.recommendationReasons.map((r) => (language === 'ar' ? r.ar : r.en)).join('\n\n')
+                  : (language === 'ar' ? 'لم يتم تشغيل التقييم بعد.' : 'Scoring has not run yet.')}
                 </p>
               </div>
 
@@ -906,7 +883,7 @@ export default function ApplicationDetailPage() {
                 <LinearFraudRiskBar
                   score={application.fraudRiskScore}
                   label={application.fraudRiskScore >= 70 ? (language === 'ar' ? 'مخاطر مرتفعة' : 'High Risk') : (language === 'ar' ? 'مخاطر منخفضة' : 'Low Risk')}
-                  sublabel={language === 'ar' ? 'تنبيه: يتطلب فحص امتثال وتدقيق بشري' : 'Compliance inspection required'}
+                  sublabel={application.fraudRiskScore >= 60 ? (language === 'ar' ? 'تنبيه: يتطلب فحص امتثال وتدقيق بشري' : 'Compliance inspection required') : ''}
                 />
               ) : (
                 <p className="text-xs text-text-muted">
