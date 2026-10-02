@@ -36,6 +36,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { CircularScoreGauge, LinearFraudRiskBar } from '@/components/ui/ScoreGauge';
 import { Modal } from '@/components/ui/Modal';
 import { Alert } from '@/components/ui/Alert';
+import { mockApplications } from '@/data/mockData';
 import { isDemoMode } from '@/lib/config';
 import {
   fetchApplicationById,
