@@ -36,12 +36,28 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { CircularScoreGauge, LinearFraudRiskBar } from '@/components/ui/ScoreGauge';
 import { Modal } from '@/components/ui/Modal';
 import { Alert } from '@/components/ui/Alert';
-import { mockApplications } from '@/data/mockData';
+import { isDemoMode } from '@/lib/config';
 import {
   fetchApplicationById,
   runScoringPipeline,
   submitOfficerDecision,
 } from '@/lib/api';
+
+// Empty placeholder; the page shows a loading screen until the real application arrives.
+const EMPTY_APPLICATION = {
+  id: '', applicantName: '', applicantNameEn: '', nationalId: '', mobileNumber: '',
+  clientType: 'new', occupation: '', occupationEn: '', loanType: 'personal',
+  loanTypeLabel: '', loanTypeLabelEn: '', requestedAmount: 0, currency: 'ج.م',
+  date: '', lastUpdated: '', status: 'under_review',
+  aiRecommendation: 'manual_review', aiRecommendationLabel: '', aiRecommendationLabelEn: '',
+  aiConfidence: 0, recommendationReasons: [],
+  pipelineCompletedSteps: 0, pipelineTotalSteps: 0, pipelineSteps: [],
+  ocrAccuracy: 0, extractedFromDocCount: 0, extractedFields: [], bankSummary: {},
+  creditScore: 0, creditRiskCategory: 'medium', creditRiskLabel: '', creditRiskLabelEn: '',
+  calculatedFactorsCount: 0, creditFactors: [],
+  fraudRiskScore: 0, fraudRiskCategory: 'low', fraudRiskLabel: '', fraudRiskLabelEn: '',
+  analyzedSignalsCount: 0, fraudSignals: [], documents: [], timeline: [],
+} as unknown as (typeof mockApplications)[number];
 
 export default function ApplicationDetailPage() {
   const params = useParams();
@@ -51,9 +67,14 @@ export default function ApplicationDetailPage() {
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
   const appId = (params?.id as string) || 'APP-2026-0839';
-  const defaultApp = mockApplications.find((a) => a.id === appId) || mockApplications[0];
-
-  const [application, setApplication] = useState(defaultApp);
+  const [application, setApplication] = useState(
+    isDemoMode
+      ? mockApplications.find((a) => a.id === appId) || mockApplications[0]
+      : EMPTY_APPLICATION
+  );
+  const [isLoadingApp, setIsLoadingApp] = useState(!isDemoMode);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  
   const [activeTab, setActiveTab] = useState('extractedData');
   const [previewDocModal, setPreviewDocModal] = useState<string | null>(null);
   const [expandedSignalId, setExpandedSignalId] = useState<string | null>('fr_1');
@@ -82,31 +103,31 @@ export default function ApplicationDetailPage() {
     { id: 'auditLog', label: t('tab.auditLog') },
   ];
 
-  // Load real application if available
+  // Load the real application from the backend
   useEffect(() => {
+    if (isDemoMode || !session?.access_token) return;
     let isMounted = true;
     async function loadData() {
+      setIsLoadingApp(true);
+      setLoadError(null);
       try {
         const live = await fetchApplicationById(appId, session?.access_token);
         if (isMounted && live && live.id) {
-          setApplication((prev) => ({
-            ...prev,
+          setApplication({
+            ...EMPTY_APPLICATION,
             ...live,
-            applicantName: live.applicantName || prev.applicantName,
-            nationalId: live.nationalId || prev.nationalId,
-            requestedAmount: live.requestedAmount ? Number(live.requestedAmount) : prev.requestedAmount,
-            status: live.status || prev.status,
-            creditScore: live.creditScore !== undefined ? live.creditScore : prev.creditScore,
-            fraudRiskScore: live.fraudRiskScore !== undefined ? live.fraudRiskScore : prev.fraudRiskScore,
-            aiRecommendation: live.aiRecommendation || prev.aiRecommendation,
-            aiRecommendationLabel: live.aiRecommendationLabel || prev.aiRecommendationLabel,
-          }));
+            requestedAmount: Number(live.requestedAmount || 0),
+          });
         }
-      } catch (err) {
-        // Fall back gracefully to seeded data
+      } catch (err: any) {
+        if (isMounted) {
+          setLoadError(err.message || (language === 'ar' ? 'تعذّر تحميل الطلب.' : 'Could not load the application.'));
+        }
+      } finally {
+        if (isMounted) setIsLoadingApp(false);
       }
     }
-    loadData();
+    void loadData();
     return () => {
       isMounted = false;
     };
@@ -186,17 +207,37 @@ export default function ApplicationDetailPage() {
 
   // Dynamic Micro-Analytics calculations from live application & bank summary
   const bankSummary = (application as any).bankSummary || (application as any).bank_summary || {};
-  const declaredSalary = Number(bankSummary.declared_net_salary) || 22880.0;
-  const verifiedBankInflow = Number(bankSummary.monthly_average) || 2998.5;
-  const requestedLoan = Number(application.requestedAmount) || 100000;
+  const declaredSalary = Number(bankSummary.declared_net_salary) || 0;
+  const verifiedBankInflow = Number(bankSummary.monthly_average) || 0;
+  const requestedLoan = Number(application.requestedAmount) || 0;
   const tenureMonths = Number((application as any).tenureMonths || (application as any).tenure_months) || 36;
   const baseMonthlyInstallment = Math.round((requestedLoan / tenureMonths) * 1.18);
   const dbrDeclared = declaredSalary > 0 ? ((baseMonthlyInstallment / declaredSalary) * 100).toFixed(1) : '—';
   const dbrVerified = verifiedBankInflow > 0 ? ((baseMonthlyInstallment / verifiedBankInflow) * 100).toFixed(1) : '—';
-  const applicantPd = (application as any).pdProbability ? Number((application as any).pdProbability) : 0.0524;
+  const applicantPd = (application as any).pdProbability ? Number((application as any).pdProbability) : 0;
   const portfolioAvgPd = 0.0482;
   const applicantEcl = Math.round(requestedLoan * applicantPd * 0.45);
 
+  if (isLoadingApp || loadError) {
+    return (
+      <AppLayout
+        breadcrumbTitle={appId}
+        breadcrumbParent={t('nav.applications')}
+        breadcrumbParentHref="/applications"
+      >
+        <div className="p-10 text-center text-xs">
+          {loadError ? (
+            <span className="text-semantic-error">{loadError}</span>
+          ) : (
+            <span className="text-text-secondary">
+              {language === 'ar' ? 'جاري تحميل الطلب...' : 'Loading application...'}
+            </span>
+          )}
+        </div>
+      </AppLayout>
+    );
+  }
+  
   return (
     <AppLayout
       breadcrumbTitle={application.id}
@@ -714,7 +755,7 @@ export default function ApplicationDetailPage() {
                     <span className="font-bold text-text-primary">1. بناءً على صافي الراتب المعلن (22,880 ج.م)</span>
                     <Badge variant="success">{dbrDeclared}% DBR</Badge>
                   </div>
-                  <ProgressBar value={Math.min(Number(dbrDeclared), 100)} color="emerald" size="md" />
+                  <ProgressBar value={Math.min(Number(dbrDeclared) || 0, 100)} color="emerald" size="md" />
                   <p className="text-[11px] text-text-secondary">
                     ضمن الحد الائتماني الآمن المسموح به من البنك المركزي المصري (الحد الأقصى 50%).
                   </p>
