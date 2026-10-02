@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   FileText,
   FileSearch,
-  CheckSquare,
   ShieldAlert,
   Bot,
   Briefcase,
@@ -55,18 +54,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       href: '/documents',
       icon: FileSearch,
     },
-    {
-      id: 'credit-assessment',
-      label: t('nav.creditAssessment'),
-      href: '/applications/APP-2026-0839',
-      icon: CheckSquare,
-    },
+    
     {
       id: 'fraud-detection',
       label: t('nav.fraudDetection'),
       href: '/fraud-detection',
       icon: ShieldAlert,
-      badge: 3,
     },
     {
       id: 'ai-assistant',
