@@ -42,5 +42,5 @@ class DecisionAuditLog(Base):
     default_probability = Column(Float, nullable=True)
     approved_tenure_months = Column(Integer, nullable=True)
     final_decision = Column(String(30), nullable=True)  # AUTO-APPROVE | MANUAL REVIEW | AUTO-REJECT
-    risk_tier = Column(String(50), nullable=True)
+    risk_tier = Column(String(150), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
