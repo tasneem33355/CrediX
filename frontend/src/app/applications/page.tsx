@@ -125,8 +125,7 @@ export default function ApplicationsPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'خطأ في التحميل';
       setError(msg);
-      // Fallback: show mock data so UI doesn't break
-      setApps(mockApplications.slice(skip, skip + PAGE_SIZE).map(normalise));
+      setApps([]);
       setHasMore(false);
     } finally {
       setLoading(false);
