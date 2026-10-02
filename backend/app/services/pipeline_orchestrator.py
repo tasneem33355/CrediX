@@ -527,7 +527,7 @@ async def run_scoring_pipeline_for_application(
     audit_log.default_probability = _num(credit_res.get("default_probability"))
     audit_log.approved_tenure_months = app.tenure_months
     audit_log.final_decision = str(credit_res.get("decision") or "") or None
-        audit_log.risk_tier = (str(credit_res.get("risk_tier") or "")[:150]) or None
+    audit_log.risk_tier = (str(credit_res.get("risk_tier") or "")[:150]) or None
     audit_log.created_at = datetime.utcnow()
     
     # Append timeline
