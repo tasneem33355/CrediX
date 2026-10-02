@@ -216,7 +216,6 @@ export default function ApplicationDetailPage() {
   const dbrDeclared = declaredSalary > 0 ? ((baseMonthlyInstallment / declaredSalary) * 100).toFixed(1) : '—';
   const dbrVerified = verifiedBankInflow > 0 ? ((baseMonthlyInstallment / verifiedBankInflow) * 100).toFixed(1) : '—';
   const applicantPd = (application as any).pdProbability ? Number((application as any).pdProbability) : 0;
-  const portfolioAvgPd = 0.0482;
   const applicantEcl = Math.round(requestedLoan * applicantPd * 0.45);
 
   if (isLoadingApp || loadError) {
