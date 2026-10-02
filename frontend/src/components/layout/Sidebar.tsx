@@ -42,7 +42,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     icon: React.ComponentType<{ className?: string }>;
     badge?: number;
   }[] = [
-
+    {
+      id: 'dashboard',
+      label: t('nav.dashboard'),
+      href: '/dashboard',
+      icon: LayoutDashboard,
+    },
     {
       id: 'applications',
       label: t('nav.applications'),
