@@ -23,6 +23,7 @@ from app.crud.crud_application import (
     DecisionConflict,
 )
 from app.models.user import User
+from app.services.application_analytics import get_application_analytics
 from app.schemas.application import (
     LoanApplicationResponse,
     LoanApplicationCreate,
@@ -148,3 +149,15 @@ def application_audit_trail(
     """Chronological audit trail (officers only; still available after the application is deleted)."""
     return get_audit_trail(db, app_id)
 
+
+@router.get("/{app_id}/analytics")
+def application_analytics(
+    app_id: str,
+    db: Session = Depends(get_db),
+    _officer: User = Depends(require_officer),
+):
+    """Risk & scenario analytics for one application (officers only)."""
+    db_app = get_application_by_id(db, app_id)
+    if not db_app:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Application {app_id} not found")
+    return get_application_analytics(db, db_app)
