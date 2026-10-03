@@ -102,7 +102,7 @@ export default function ApplicationDetailPage() {
       label: t('tab.fraudDetection'),
       badge: application.fraudSignals?.length > 0 ? application.fraudSignals.length : undefined,
     },
-    { id: 'documents', label: t('tab.documents'), badge: application.documents?.length || 4 },
+    { id: 'documents', label: t('tab.documents'), badge: application.documents?.length ?? 0 },
     { id: 'auditLog', label: t('tab.auditLog') },
   ];
 
@@ -1009,7 +1009,7 @@ export default function ApplicationDetailPage() {
                   {language === 'ar' ? 'المستندات المعالجة بالـ OCR' : 'OCR Processed Documents'}
                 </h3>
                 <p className="text-xs text-text-muted mt-0.5">
-                  {language === 'ar' ? '4 مستندات تم استخراج بياناتها بنجاح' : '4 Documents extracted successfully'}
+                    {language === 'ar' ? `${application.documents?.length ?? 0} مستند` : `${application.documents?.length ?? 0} document(s)`}
                 </p>
               </div>
 
@@ -1024,12 +1024,7 @@ export default function ApplicationDetailPage() {
             </div>
 
             <div className="space-y-3">
-              {[
-                { code: 'NID', name: 'بطاقة الرقم القومي (الوجهان)', size: '1.4 MB', status: 'success', statusLabel: 'مقروء 98%' },
-                { code: 'SAL', name: 'شهادة إثبات الراتب - كاش', size: '840 KB', status: 'success', statusLabel: 'مقروء 95%' },
-                { code: 'BNK', name: 'كشف حساب بنك المشرق (5 أشهر)', size: '3.8 MB', status: 'success', statusLabel: 'مقروء 96%' },
-                { code: 'SCR', name: 'تقرير الاستعلام الائتماني i-Score', size: '2.1 MB', status: 'success', statusLabel: 'مقروء 99%' },
-              ].map((doc, idx) => (
+              {((application.documents as any[]) ?? []).map((doc: any, idx: number) => (
                 <div
                   key={idx}
                   className="flex items-center justify-between p-4 bg-surface-subtle rounded-2xl border border-border hover:border-border-strong transition-colors"
@@ -1045,8 +1040,8 @@ export default function ApplicationDetailPage() {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <Badge variant={doc.status === 'success' ? 'success' : 'warning'} dot>
-                      {doc.statusLabel}
+                      <Badge variant={doc.status === 'success' ? 'success' : doc.status === 'failed' ? 'danger' : 'warning'} dot>
+                      {language === 'ar' ? doc.statusLabel : doc.statusLabelEn}
                     </Badge>
                     <button
                       onClick={() => setPreviewDocModal(doc.name)}
