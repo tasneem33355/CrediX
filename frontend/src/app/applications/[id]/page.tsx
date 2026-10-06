@@ -601,15 +601,53 @@ export default function ApplicationDetailPage() {
               </p>
 
               <div className="py-4">
-                {application.creditScore ? (
-                  <CircularScoreGauge
-                    score={application.creditScore}
-                    maxScore={850}
-                    label={(application as any).ratingGrade || (language === 'ar' ? 'جدارة منخفضة المخاطر (Grade B)' : 'Grade B (Low Risk)')}
-                    sublabel={an?.pd != null ? `PD: ${(an.pd * 100).toFixed(2)}%` : ''}
-                    size="lg"
-                  />
-                ) : (
+                {application.creditScore ? (() => {
+                  const pdVal = an?.pd ?? null;
+                  let gaugeColor: string | undefined = undefined;
+                  let gradeLabel: string;
+                  let decisionText: string;
+                  let decisionColorClass: string;
+
+                  if (pdVal !== null) {
+                    if (pdVal >= 0.20) {
+                      gaugeColor = '#DC4C4C';
+                      gradeLabel = language === 'ar' ? 'عالية المخاطر (Grade E) - رفض تلقائي' : 'High Risk (Grade E) - Decline Application';
+                      decisionText = 'AUTO-REJECT';
+                      decisionColorClass = 'font-bold text-semantic-error';
+                    } else if (pdVal >= 0.0723) {
+                      gaugeColor = '#F59E0B';
+                      gradeLabel = language === 'ar' ? 'مخاطر متوسطة (Grade C/D) - مراجعة بشرية' : 'Medium Risk (Grade C/D) - Manual Review';
+                      decisionText = 'MANUAL REVIEW';
+                      decisionColorClass = 'font-bold text-semantic-warning';
+                    } else {
+                      gaugeColor = '#2E9E5B';
+                      gradeLabel = language === 'ar' ? 'منخفضة المخاطر (Grade A/B) - موافقة تلقائية' : 'Low Risk (Grade A/B) - Auto-Approve';
+                      decisionText = 'AUTO-APPROVE';
+                      decisionColorClass = 'font-bold text-semantic-success';
+                    }
+                  } else {
+                    gradeLabel = (application as any).ratingGrade || (language === 'ar' ? 'في انتظار التقييم' : 'Pending Scoring');
+                    decisionText = application.aiRecommendation || '—';
+                    decisionColorClass = 'font-bold text-text-secondary';
+                  }
+
+                  return (
+                    <>
+                      <CircularScoreGauge
+                        score={application.creditScore}
+                        maxScore={850}
+                        label={gradeLabel}
+                        sublabel={an?.pd != null ? `PD: ${(an.pd * 100).toFixed(2)}%` : ''}
+                        size="lg"
+                        colorOverride={gaugeColor}
+                      />
+                      <div className="w-full pt-4 border-t border-border text-xs text-text-secondary flex justify-between">
+                        <span>{language === 'ar' ? 'قرار النموذج التلقائي:' : 'Model Auto Decision:'}</span>
+                        <span className={decisionColorClass}>{decisionText}</span>
+                      </div>
+                    </>
+                  );
+                })() : (
                   <div className="p-6 text-center space-y-2 bg-surface-subtle rounded-2xl border border-dashed border-border">
                     <Sparkles className="w-8 h-8 text-brand-navy mx-auto opacity-50" />
                     <p className="text-xs font-semibold text-text-primary">
@@ -622,12 +660,12 @@ export default function ApplicationDetailPage() {
                 )}
               </div>
 
-              <div className="w-full pt-4 border-t border-border text-xs text-text-secondary flex justify-between">
-                <span>{language === 'ar' ? 'قرار النموذج التلقائي:' : 'Model Auto Decision:'}</span>
-                <span className="font-bold text-semantic-success">
-                  {application.creditScore ? (application.aiRecommendation || 'AUTO-APPROVE') : '—'}
-                </span>
-              </div>
+              {!application.creditScore && (
+                <div className="w-full pt-4 border-t border-border text-xs text-text-secondary flex justify-between">
+                  <span>{language === 'ar' ? 'قرار النموذج التلقائي:' : 'Model Auto Decision:'}</span>
+                  <span className="font-bold text-text-secondary">—</span>
+                </div>
+              )}
             </Card>
 
             {/* Arabic LLM Explanation Box & Evaluation Factors (2 cols) */}
