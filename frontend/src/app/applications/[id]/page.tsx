@@ -1183,9 +1183,9 @@ export default function ApplicationDetailPage() {
           applicantData={{
             name: language === 'ar' ? application.applicantName : (application.applicantNameEn || application.applicantName),
             nationalId: application.nationalId,
-            salary: application.declaredMonthlyIncome || 85000,
+            salary: an?.declared_salary || application.declaredMonthlyIncome || 85000,
             jobTitle: language === 'ar' ? (application.occupation || 'أخصائي تطوير أعمال') : (application.occupationEn || application.occupation || 'Business Development Specialist'),
-            companyName: (application as any).companyName || 'شركة النيل للحلول التقنية (ش.م.م)',
+            companyName: application.companyName || 'شركة النيل للحلول التقنية (ش.م.م)',
           }}
           language={language}
         />

@@ -105,6 +105,8 @@ export interface LoanApplication {
   loanTypeLabel: string;
   loanTypeLabelEn: string;
   requestedAmount: number;
+  declaredMonthlyIncome?: number;
+  companyName?: string;
   currency: string;
   date: string;
   lastUpdated: string;
