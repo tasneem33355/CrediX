@@ -2,6 +2,7 @@
 
 import secrets
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -12,6 +13,17 @@ from app.schemas.application import LoanApplicationCreate, LoanApplicationUpdate
 from app.models.portfolio import DecisionAuditLog, LoanFacility
 from app.models.case import CaseCard
 from app.crud.crud_case import sync_case_card
+
+
+def _sanitize_for_json(val: Any) -> Any:
+    """Recursively convert Decimals and non-primitive objects to JSON-serializable types."""
+    if isinstance(val, dict):
+        return {k: _sanitize_for_json(v) for k, v in val.items()}
+    elif isinstance(val, (list, tuple)):
+        return [_sanitize_for_json(x) for x in val]
+    elif isinstance(val, Decimal):
+        return float(val)
+    return val
 
 class DecisionConflict(Exception):
     """Raised when an application already has a final (approved/rejected) decision."""
@@ -44,11 +56,12 @@ def _audit(
     new_status: Optional[str] = None, notes: Optional[str] = None,
     snapshot: Optional[Dict[str, Any]] = None,
 ) -> None:
+    safe_snapshot = _sanitize_for_json(snapshot) if snapshot is not None else None
     db.add(DecisionAudit(
         id=new_id("aud"), application_id=application_id, action=action, decision=decision,
         previous_status=previous_status, new_status=new_status,
         actor_user_id=actor.id if actor else None, actor_name=actor.name_en if actor else None,
-        notes=notes, snapshot=snapshot,
+        notes=notes, snapshot=safe_snapshot,
     ))
 
 
@@ -345,13 +358,13 @@ def record_officer_decision(
         previous_status=previous_status, new_status=new_status, notes=notes,
         snapshot={
             "ai_recommendation": db_app.ai_recommendation,
-            "ai_confidence": db_app.ai_confidence,
+            "ai_confidence": float(db_app.ai_confidence) if db_app.ai_confidence is not None else None,
             "credit_score": db_app.credit_score,
             "fraud_risk_score": db_app.fraud_risk_score,
-            "requested_amount": db_app.requested_amount,
+            "requested_amount": float(db_app.requested_amount) if db_app.requested_amount is not None else None,
             "policy_override_applied": policy_override_applied,
             "officer_tier": getattr(officer, "officer_tier", None) if officer else None,
-            "officer_approval_limit": getattr(officer, "approval_limit_egp", None) if officer else None,
+            "officer_approval_limit": float(officer.approval_limit_egp) if (officer and getattr(officer, "approval_limit_egp", None) is not None) else None,
         },
     )
     
