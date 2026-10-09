@@ -1,5 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
-import type { UserRole } from '@/types';
+import type { User, UserRole } from '@/types';
 import { AuthApiError, getCredixProfile, provisionCredixClient } from '@/lib/auth/api';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
