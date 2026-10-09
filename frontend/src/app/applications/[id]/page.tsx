@@ -36,6 +36,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { CircularScoreGauge, LinearFraudRiskBar } from '@/components/ui/ScoreGauge';
 import { Modal } from '@/components/ui/Modal';
 import { Alert } from '@/components/ui/Alert';
+import { DocumentViewerModal } from '@/components/documents/DocumentViewerModal';
 import { mockApplications } from '@/data/mockData';
 import { isDemoMode } from '@/lib/config';
 import {
@@ -79,7 +80,7 @@ export default function ApplicationDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState('extractedData');
-  const [previewDocModal, setPreviewDocModal] = useState<string | null>(null);
+  const [previewDocModal, setPreviewDocModal] = useState<any | null>(null);
   const [expandedSignalId, setExpandedSignalId] = useState<string | null>('fr_1');
   const [actionSuccessToast, setActionSuccessToast] = useState<string | null>(null);
   const [actionErrorToast, setActionErrorToast] = useState<string | null>(null);
@@ -464,16 +465,27 @@ export default function ApplicationDetailPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left/Main Card: Automatically Extracted Data (2 cols) */}
               <Card className="lg:col-span-2 p-6 space-y-6">
-                <div className="flex items-center justify-between border-b border-border pb-4">
+                <div className="flex items-center justify-between border-b border-border pb-4 flex-wrap gap-2">
                   <div>
                     <h3 className="text-base font-bold text-text-primary">{t('ocr.title')}</h3>
                     <p className="text-xs text-text-muted mt-0.5">
                       {language === 'ar' ? 'مستخرج آلياً من 4 وثائق رسمية' : 'Extracted from 4 official documents'}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1 bg-[#E8EEF5] text-brand-navy rounded-full border border-brand-navy/20 text-xs font-bold">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{t('ocr.accuracy')} {application.ocrAccuracy != null ? `${application.ocrAccuracy}%` : '—'}</span>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<FileText className="w-4 h-4 text-brand-navy" />}
+                      onClick={() => setPreviewDocModal(application.documents?.[0] || { id: 'doc_1', code: 'ID', name: 'بطاقة الرقم القومي' })}
+                      className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/10 text-xs"
+                    >
+                      {language === 'ar' ? 'فحص المستند ومطابقة الـ OCR' : 'Inspect Document & OCR'}
+                    </Button>
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-[#E8EEF5] text-brand-navy rounded-full border border-brand-navy/20 text-xs font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{t('ocr.accuracy')} {application.ocrAccuracy != null ? `${application.ocrAccuracy}%` : '—'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1055,7 +1067,7 @@ export default function ApplicationDetailPage() {
                 variant="outline"
                 size="sm"
                 icon={<Plus className="w-4 h-4" />}
-                onClick={() => setPreviewDocModal('طلب رفع مستند تكميلي')}
+                onClick={() => setPreviewDocModal(application.documents?.[0] || { id: 'doc_1', code: 'DOC', name: 'طلب رفع مستند تكميلي' })}
               >
                 {t('action.addDocument')}
               </Button>
@@ -1082,8 +1094,8 @@ export default function ApplicationDetailPage() {
                       {language === 'ar' ? doc.statusLabel : doc.statusLabelEn}
                     </Badge>
                     <button
-                      onClick={() => setPreviewDocModal(doc.name)}
-                      className="text-xs font-semibold text-brand-navy hover:text-brand-navy-light flex items-center gap-1 cursor-pointer transition-colors"
+                      onClick={() => setPreviewDocModal(doc)}
+                      className="text-xs font-semibold text-brand-navy hover:text-brand-navy-light flex items-center gap-1 cursor-pointer transition-colors bg-surface px-3 py-1.5 rounded-xl border border-border hover:border-brand-navy/30 shadow-2xs"
                     >
                       <span>{t('action.preview')}</span>
                       <Arrow className="w-3.5 h-3.5" />
@@ -1163,30 +1175,20 @@ export default function ApplicationDetailPage() {
           </Card>
         )}
 
-        {/* Document Preview Modal */}
-        <Modal
-          isOpen={!!previewDocModal}
+        {/* Document Interactive Preview & Human Verification Modal */}
+        <DocumentViewerModal
+          isOpen={Boolean(previewDocModal)}
           onClose={() => setPreviewDocModal(null)}
-          title={`${t('action.preview')}: ${previewDocModal}`}
-          size="lg"
-        >
-          <div className="space-y-4">
-            <div className="h-96 rounded-xl bg-surface-subtle flex flex-col items-center justify-center p-6 text-center border-2 border-dashed border-border">
-              <FileText className="w-12 h-12 text-brand-navy mb-2" />
-              <p className="text-sm font-semibold text-text-primary">{previewDocModal}</p>
-              <p className="text-xs text-text-muted mt-1">
-                {language === 'ar'
-                  ? 'مستعرض المستندات التفاعلي مع استخراجات الـ OCR المحفوظة في قاعدة البيانات'
-                  : 'Interactive Document Viewer with OCR Extracted Annotations'}
-              </p>
-            </div>
-            <div className="flex justify-end">
-              <Button variant="secondary" onClick={() => setPreviewDocModal(null)}>
-                {t('action.close')}
-              </Button>
-            </div>
-          </div>
-        </Modal>
+          document={previewDocModal}
+          applicantData={{
+            name: language === 'ar' ? application.applicantName : (application.applicantNameEn || application.applicantName),
+            nationalId: application.nationalId,
+            salary: application.declaredMonthlyIncome || 85000,
+            jobTitle: language === 'ar' ? (application.occupation || 'أخصائي تطوير أعمال') : (application.occupationEn || application.occupation || 'Business Development Specialist'),
+            companyName: (application as any).companyName || 'شركة النيل للحلول التقنية (ش.م.م)',
+          }}
+          language={language}
+        />
 
         {/* Decision Confirmation Modal */}
         <Modal
