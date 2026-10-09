@@ -9,6 +9,9 @@ class UserBase(BaseModel):
     name_en: str = Field(..., alias="nameEn")
     email: str
     role: str = "officer"  # 'client' | 'officer'
+    officer_tier: Optional[str] = Field(None, alias="officerTier")
+    approval_limit_egp: Optional[float] = Field(None, alias="approvalLimitEgp")
+    can_override_policy: Optional[bool] = Field(False, alias="canOverridePolicy")
     avatar: Optional[str] = None
     title: Optional[str] = None
     title_en: Optional[str] = Field(None, alias="titleEn")

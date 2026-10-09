@@ -99,9 +99,15 @@ export async function submitOfficerDecision(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     if (res.status === 409) {
-      throw new Error(err.detail || 'القرار نهائي بالفعل ولا يمكن تعديله (409 Conflict)');
+      const msg = typeof err.detail === 'object' && err.detail?.message ? err.detail.message : (err.detail || 'القرار نهائي بالفعل ولا يمكن تعديله (409 Conflict)');
+      throw new Error(msg);
     }
-    throw new Error(err.detail || `Failed to submit decision (${res.status})`);
+    if (res.status === 403) {
+      const msg = typeof err.detail === 'object' && err.detail?.message ? err.detail.message : (err.detail || 'مبلغ التمويل يتجاوز سقف صلاحيتك الائتمانية أو لا تملك الصلاحية لتنفيذ هذا الإجراء (403 Forbidden)');
+      throw new Error(msg);
+    }
+    const msg = typeof err.detail === 'object' && err.detail?.message ? err.detail.message : (err.detail || `Failed to submit decision (${res.status})`);
+    throw new Error(msg);
   }
   return res.json();
 }

@@ -17,6 +17,16 @@ class DecisionConflict(Exception):
     """Raised when an application already has a final (approved/rejected) decision."""
 
 
+class DelegationLimitExceeded(Exception):
+    """Raised when an officer attempts to approve an amount exceeding their delegation authority."""
+
+    def __init__(self, message: str, limit: float, requested: float):
+        super().__init__(message)
+        self.message = message
+        self.limit = limit
+        self.requested = requested
+
+
 FINAL_STATUSES = {"approved", "rejected"}
 
 
@@ -298,6 +308,22 @@ def record_officer_decision(
     if db_app.status in FINAL_STATUSES:
         raise DecisionConflict(f"Application {app_id} already has a final decision ({db_app.status})")
 
+    # Credit Delegation Authority Matrix Enforcement:
+    policy_override_applied = False
+    if decision == "approve" and officer is not None:
+        limit = getattr(officer, "approval_limit_egp", None)
+        can_override = getattr(officer, "can_override_policy", False)
+        requested = float(db_app.requested_amount or 0)
+        if limit is not None and limit > 0 and requested > limit:
+            if not can_override:
+                raise DelegationLimitExceeded(
+                    f"مبلغ التمويل المطلوب ({requested:,.0f} ج.م) يتجاوز سقف صلاحيتك الائتمانية ({limit:,.0f} ج.م). يجب تصعيد الملف لمدير المخاطر أو الـ CRO.",
+                    limit=limit,
+                    requested=requested,
+                )
+            else:
+                policy_override_applied = True
+
     new_status, title, title_en, desc, desc_en = _DECISION_OUTCOMES[decision]
     previous_status = db_app.status
 
@@ -322,6 +348,10 @@ def record_officer_decision(
             "ai_confidence": db_app.ai_confidence,
             "credit_score": db_app.credit_score,
             "fraud_risk_score": db_app.fraud_risk_score,
+            "requested_amount": db_app.requested_amount,
+            "policy_override_applied": policy_override_applied,
+            "officer_tier": getattr(officer, "officer_tier", None) if officer else None,
+            "officer_approval_limit": getattr(officer, "approval_limit_egp", None) if officer else None,
         },
     )
     

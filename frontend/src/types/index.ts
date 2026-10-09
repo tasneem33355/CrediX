@@ -2,12 +2,17 @@ export type Language = 'ar' | 'en';
 
 export type UserRole = 'client' | 'officer';
 
+export type OfficerTier = 'junior_officer' | 'senior_officer' | 'risk_manager' | 'cro';
+
 export interface User {
   id: string;
   name: string;
   nameEn: string;
   email: string;
   role: UserRole;
+  officerTier?: OfficerTier;
+  approvalLimitEgp?: number;
+  canOverridePolicy?: boolean;
   avatar?: string;
   title?: string;
   titleEn?: string;

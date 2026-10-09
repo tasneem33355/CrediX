@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Building2,
   Layers,
+  Shield,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuth } from '@/context/AuthContext';
@@ -67,7 +68,7 @@ export default function ApplicationDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { t, language, formatCurrency, formatNumber, direction } = useLanguage();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
   const appId = (params?.id as string) || 'APP-2026-0839';
@@ -1203,51 +1204,119 @@ export default function ApplicationDetailPage() {
           }
           size="md"
         >
-          <div className="space-y-4 text-start">
-            <p className="text-xs text-text-secondary leading-relaxed">
-              {pendingDecisionType === 'approve'
-                ? 'هل أنت متأكد من اعتماد التمويل لهذا الطلب؟ سيتم تثبيت القرار نهائياً وتوثيقه في سجل التدقيق.'
-                : pendingDecisionType === 'reject'
-                ? 'هل أنت متأكد من رفض الطلب؟ سيتم توثيق الرفض وإشعار العميل.'
-                : 'سيتم تحويل هذا الطلب إلى قائمة المراجعة البشرية المتقدمة لاستيفاء الأوراق.'}
-            </p>
+          {(() => {
+            const reqAmount = application.requestedAmount || 0;
+            const officerLimit = user?.approvalLimitEgp ?? 750000;
+            const isLimitExceeded = reqAmount > officerLimit;
+            const canOverride = Boolean(user?.canOverridePolicy);
+            const isApprovalBlocked = pendingDecisionType === 'approve' && isLimitExceeded && !canOverride;
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-text-primary">ملاحظات مسؤول الائتمان (Decision Notes):</label>
-              <textarea
-                value={decisionNotes}
-                onChange={(e) => setDecisionNotes(e.target.value)}
-                placeholder="أدخل مبررات القرار أو المتطلبات التكميلية..."
-                className="w-full h-24 p-3 rounded-xl border border-border bg-surface text-xs focus:ring-2 focus:ring-brand-navy/30 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 pt-3">
-              <Button variant="secondary" onClick={() => setIsDecisionModalOpen(false)}>
-                إلغاء
-              </Button>
-              <Button
-                variant={
-                  pendingDecisionType === 'approve'
-                    ? 'primary'
+            return (
+              <div className="space-y-4 text-start">
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  {pendingDecisionType === 'approve'
+                    ? 'هل أنت متأكد من اعتماد التمويل لهذا الطلب؟ سيتم تثبيت القرار نهائياً وتوثيقه في سجل التدقيق.'
                     : pendingDecisionType === 'reject'
-                    ? 'danger'
-                    : 'outline'
-                }
-                onClick={confirmDecision}
-              >
-                تأكيد الإجراء
-              </Button>
-            </div>
-          </div>
+                    ? 'هل أنت متأكد من رفض الطلب؟ سيتم توثيق الرفض وإشعار العميل.'
+                    : 'سيتم تحويل هذا الطلب إلى قائمة المراجعة البشرية المتقدمة لاستيفاء الأوراق.'}
+                </p>
+
+                {/* Delegation Limit Exceeded Warning */}
+                {pendingDecisionType === 'approve' && isLimitExceeded && !canOverride && (
+                  <div className="p-3.5 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-start space-y-2">
+                    <div className="flex items-center gap-2 text-semantic-error font-bold text-xs">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>تجاوز سقف الصلاحية الائتمانية (Delegation Limit Exceeded)</span>
+                    </div>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">
+                      مبلغ التمويل المطلوب ({reqAmount.toLocaleString('ar-EG')} ج.م) يتجاوز الحد الأقصى لصلاحيتك الائتمانية ({officerLimit.toLocaleString('ar-EG')} ج.م).
+                      بموجب سياسات الحوكمة المصرفية، لا تملك رتبتك صلاحية اعتماد هذا المبلغ مباشرة ويجب تصعيده لمدير المخاطر أو الـ CRO.
+                    </p>
+                  </div>
+                )}
+
+                {/* Policy Override Allowed Notice */}
+                {pendingDecisionType === 'approve' && isLimitExceeded && canOverride && (
+                  <div className="p-3.5 rounded-xl bg-semantic-warning-subtle border border-semantic-warning/30 text-start space-y-1">
+                    <div className="flex items-center gap-2 text-semantic-warning font-bold text-xs">
+                      <ShieldAlert className="w-4 h-4 shrink-0" />
+                      <span>اعتماد باستثناء سياسة ائتمانية (Policy Override Authority)</span>
+                    </div>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">
+                      المبلغ ({reqAmount.toLocaleString('ar-EG')} ج.م) يتجاوز الحدود القياسية، ولكن رتبتك تمنحك صلاحية استثنائية للاعتماد. سيتم توثيق الاستثناء رسمياً في سجل التدقيق (Audit Trail).
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-text-primary">ملاحظات مسؤول الائتمان (Decision Notes):</label>
+                  <textarea
+                    value={decisionNotes}
+                    onChange={(e) => setDecisionNotes(e.target.value)}
+                    placeholder="أدخل مبررات القرار أو المتطلبات التكميلية..."
+                    className="w-full h-24 p-3 rounded-xl border border-border bg-surface text-xs focus:ring-2 focus:ring-brand-navy/30 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3">
+                  <Button variant="secondary" onClick={() => setIsDecisionModalOpen(false)}>
+                    إلغاء
+                  </Button>
+                  {isApprovalBlocked ? (
+                    <Button
+                      variant="primary"
+                      className="bg-brand-navy hover:bg-brand-navy/90 text-white"
+                      onClick={async () => {
+                        setPendingDecisionType('manual');
+                        setDecisionNotes((prev) =>
+                          prev
+                            ? `${prev} - (تصعيد لتجاوز سقف الصلاحية الائتمانية)`
+                            : `تم التصعيد لتجاوز سقف الصلاحية الائتمانية للموظف (المطلوب: ${reqAmount.toLocaleString('ar-EG')} ج.م، السقف: ${officerLimit.toLocaleString('ar-EG')} ج.م)`
+                        );
+                        await confirmDecision();
+                      }}
+                    >
+                      تصعيد لمدير إدارة المخاطر
+                    </Button>
+                  ) : (
+                    <Button
+                      variant={
+                        pendingDecisionType === 'approve'
+                          ? 'primary'
+                          : pendingDecisionType === 'reject'
+                          ? 'danger'
+                          : 'outline'
+                      }
+                      onClick={confirmDecision}
+                    >
+                      تأكيد الإجراء
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </Modal>
 
         {/* Sticky Bottom Action Bar */}
         <div className="fixed bottom-0 start-0 end-0 bg-surface/95 backdrop-blur-md border-t border-border p-4 z-40 shadow-lg">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-text-primary">{t('application.officerAction')}</span>
-              <span className="text-xs text-text-muted font-mono">{application.id}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-text-primary">{t('application.officerAction')}</span>
+                <span className="text-xs text-text-muted font-mono">{application.id}</span>
+              </div>
+              {user?.role === 'officer' && (
+                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-surface-subtle border border-border text-[11px]">
+                  <Shield className="w-3.5 h-3.5 text-brand-navy shrink-0" />
+                  <span className="text-text-muted font-normal">{language === 'ar' ? 'سقف الصلاحية:' : 'Limit:'}</span>
+                  <span className="font-bold text-text-primary">
+                    {(user?.approvalLimitEgp ?? 750000) >= 50000000
+                      ? (language === 'ar' ? 'غير مقيد (CRO)' : 'Unlimited')
+                      : `${(user?.approvalLimitEgp ?? 750000).toLocaleString('ar-EG')} ج.م`}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-3">

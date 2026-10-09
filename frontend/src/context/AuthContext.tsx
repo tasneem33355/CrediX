@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import type { User, UserRole } from '@/types';
+import type { User, UserRole, OfficerTier } from '@/types';
 import { AuthApiError, getCredixProfile } from '@/lib/auth/api';
 import { signInWithCredixProfile, SignInError } from '@/lib/auth/signin';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
@@ -16,19 +16,63 @@ interface AuthContextType {
   signIn: (email: string, password: string, expectedRole: UserRole) => Promise<User>;
   refreshProfile: () => Promise<User | null>;
   logout: () => Promise<void>;
+  switchOfficerTier?: (tier: OfficerTier) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const demoOfficer: User = {
-  id: 'usr_officer_01',
-  name: 'محمد سامي',
-  nameEn: 'Mohamed Sami',
-  email: 'mohamed.sami@credix.demo',
-  role: 'officer',
-  title: 'كبير مسؤولي الائتمان',
-  titleEn: 'Senior Credit Officer',
+export const DEMO_OFFICERS: Record<OfficerTier, User> = {
+  junior_officer: {
+    id: 'usr_officer_junior',
+    name: 'أحمد هلال',
+    nameEn: 'Ahmed Helal',
+    email: 'ahmed.helal@credix.demo',
+    role: 'officer',
+    officerTier: 'junior_officer',
+    approvalLimitEgp: 250000,
+    canOverridePolicy: false,
+    title: 'مسؤول ائتمان مبتدئ',
+    titleEn: 'Junior Credit Officer',
+  },
+  senior_officer: {
+    id: 'usr_officer_01',
+    name: 'محمد سامي',
+    nameEn: 'Mohamed Sami',
+    email: 'mohamed.sami@credix.demo',
+    role: 'officer',
+    officerTier: 'senior_officer',
+    approvalLimitEgp: 750000,
+    canOverridePolicy: false,
+    title: 'كبير مسؤولي الائتمان',
+    titleEn: 'Senior Credit Officer',
+  },
+  risk_manager: {
+    id: 'usr_officer_manager',
+    name: 'سارة الشناوي',
+    nameEn: 'Sara El-Shennawy',
+    email: 'sara.shennawy@credix.demo',
+    role: 'officer',
+    officerTier: 'risk_manager',
+    approvalLimitEgp: 3000000,
+    canOverridePolicy: true,
+    title: 'مدير إدارة مخاطر الائتمان',
+    titleEn: 'Credit Risk Manager',
+  },
+  cro: {
+    id: 'usr_cro',
+    name: 'د. طارق عبد العزيز',
+    nameEn: 'Dr. Tarek Abdelaziz',
+    email: 'tarek.abdelaziz@credix.demo',
+    role: 'officer',
+    officerTier: 'cro',
+    approvalLimitEgp: 100000000,
+    canOverridePolicy: true,
+    title: 'رئيس قطاع المخاطر والائتمان (CRO)',
+    titleEn: 'Chief Risk Officer',
+  },
 };
+
+const demoOfficer: User = DEMO_OFFICERS.senior_officer;
 
 const demoClient: User = {
   id: 'usr_client_01',
@@ -76,8 +120,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isDemoMode) {
       const storedRole = typeof window !== 'undefined' ? sessionStorage.getItem('credix_demo_role') : null;
+      const storedTier = (typeof window !== 'undefined' ? sessionStorage.getItem('credix_demo_officer_tier') : null) as OfficerTier | null;
       if (storedRole === 'officer') {
-        setUser(demoOfficer);
+        const activeOfficer = (storedTier && DEMO_OFFICERS[storedTier]) ? DEMO_OFFICERS[storedTier] : demoOfficer;
+        setUser(activeOfficer);
       } else if (storedRole === 'client') {
         setUser(demoClient);
       } else {
@@ -120,13 +166,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [loadExistingProfile]);
 
+  const switchOfficerTier = useCallback((tier: OfficerTier) => {
+    if (DEMO_OFFICERS[tier]) {
+      const selected = DEMO_OFFICERS[tier];
+      setUser(selected);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('credix_demo_officer_tier', tier);
+        sessionStorage.setItem('credix_demo_role', 'officer');
+      }
+    }
+  }, []);
+
   const signIn = useCallback(async (email: string, password: string, expectedRole: UserRole): Promise<User> => {
     if (isDemoMode) {
       await new Promise((resolve) => window.setTimeout(resolve, 180));
       const cleanEmail = (email || '').trim().toLowerCase();
 
       // Check for portal mismatch in demo mode:
-      const isOfficerEmail = cleanEmail.includes('officer') || cleanEmail.includes('sami') || cleanEmail === 'mohamed.sami@credix.demo';
+      const isOfficerEmail = cleanEmail.includes('officer') || cleanEmail.includes('sami') || cleanEmail.includes('helal') || cleanEmail.includes('shennawy') || cleanEmail.includes('tarek') || cleanEmail === 'mohamed.sami@credix.demo';
       const isClientEmail = cleanEmail.includes('client') || cleanEmail.includes('fouad') || cleanEmail === 'ahmed.fouad@credix.demo';
 
       if (expectedRole === 'client' && isOfficerEmail) {
@@ -143,7 +200,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      const demoProfile = expectedRole === 'officer' ? demoOfficer : demoClient;
+      let demoProfile: User = demoClient;
+      if (expectedRole === 'officer') {
+        if (cleanEmail.includes('helal') || cleanEmail.includes('junior')) {
+          demoProfile = DEMO_OFFICERS.junior_officer;
+          sessionStorage.setItem('credix_demo_officer_tier', 'junior_officer');
+        } else if (cleanEmail.includes('shennawy') || cleanEmail.includes('manager')) {
+          demoProfile = DEMO_OFFICERS.risk_manager;
+          sessionStorage.setItem('credix_demo_officer_tier', 'risk_manager');
+        } else if (cleanEmail.includes('tarek') || cleanEmail.includes('cro')) {
+          demoProfile = DEMO_OFFICERS.cro;
+          sessionStorage.setItem('credix_demo_officer_tier', 'cro');
+        } else {
+          demoProfile = DEMO_OFFICERS.senior_officer;
+          sessionStorage.setItem('credix_demo_officer_tier', 'senior_officer');
+        }
+      }
+
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('credix_demo_role', expectedRole);
       }
@@ -164,6 +237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isDemoMode) {
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('credix_demo_role');
+        sessionStorage.removeItem('credix_demo_officer_tier');
       }
       setSession(null);
       setUser(null);
@@ -192,6 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         refreshProfile,
         logout,
+        switchOfficerTier,
       }}
     >
       {children}

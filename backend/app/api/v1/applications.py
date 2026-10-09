@@ -21,6 +21,7 @@ from app.crud.crud_application import (
     record_officer_decision,
     delete_application,
     DecisionConflict,
+    DelegationLimitExceeded,
 )
 from app.models.user import User
 from app.services.application_analytics import get_application_analytics
@@ -118,11 +119,22 @@ def process_decision(
     officer: User = Depends(require_officer),
 ):
     """Submit credit officer decision: 'approve', 'reject' or 'manual' (officers only).
-    A final decision (approved/rejected) cannot be overwritten: returns 409."""
+    A final decision (approved/rejected) cannot be overwritten: returns 409.
+    Approvals exceeding the officer's delegation limit return 403."""
     try:
         updated = record_officer_decision(db, app_id, decision_req.decision, decision_req.notes, officer=officer)
     except DecisionConflict as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except DelegationLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "DELEGATION_LIMIT_EXCEEDED",
+                "message": str(exc),
+                "approvalLimit": exc.limit,
+                "requestedAmount": exc.requested,
+            },
+        )
     if not updated:
         raise _not_found(app_id)
     return updated
@@ -134,7 +146,17 @@ def remove_application(
     db: Session = Depends(get_db),
     officer: User = Depends(require_officer),
 ):
-    """Delete a loan application (officers only)."""
+    """Delete a loan application (Risk Managers & CRO only; junior/senior cannot delete)."""
+    tier = getattr(officer, "officer_tier", None)
+    can_override = getattr(officer, "can_override_policy", False)
+    if tier in {"junior_officer", "senior_officer"} and not can_override:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "INSUFFICIENT_PRIVILEGE",
+                "message": "حذف ملفات التمويل مقصور على مديري المخاطر (Risk Managers) أو رئيس القطاع (CRO) فقط.",
+            },
+        )
     if not delete_application(db, app_id, actor=officer):
         raise _not_found(app_id)
     return None

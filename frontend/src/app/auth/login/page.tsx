@@ -17,6 +17,7 @@ import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
+  Shield,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuth } from '@/context/AuthContext';
@@ -67,6 +68,57 @@ const DEMO_CREDENTIALS: Record<UserRole, {
   },
 };
 
+const OFFICER_TIER_DEMOS = [
+  {
+    tier: 'junior_officer',
+    name: 'أحمد هلال',
+    nameEn: 'Ahmed Helal',
+    email: 'ahmed.helal@credix.demo',
+    limit: '250,000 ج.م',
+    roleLabel: 'مسؤول ائتمان مبتدئ',
+    roleLabelEn: 'Junior Credit Officer',
+    subtitle: 'حد الاعتماد: حتى 250 ألف جنيه',
+    subtitleEn: 'Credit Limit: Up to 250K EGP',
+    initials: 'AH',
+  },
+  {
+    tier: 'senior_officer',
+    name: 'محمد سامي',
+    nameEn: 'Mohamed Sami',
+    email: 'mohamed.sami@credix.demo',
+    limit: '750,000 ج.م',
+    roleLabel: 'كبير مسؤولي الائتمان',
+    roleLabelEn: 'Senior Credit Officer',
+    subtitle: 'حد الاعتماد: حتى 750 ألف جنيه',
+    subtitleEn: 'Credit Limit: Up to 750K EGP',
+    initials: 'MS',
+  },
+  {
+    tier: 'risk_manager',
+    name: 'سارة الشناوي',
+    nameEn: 'Sara El-Shennawy',
+    email: 'sara.shennawy@credix.demo',
+    limit: '3,000,000 ج.م',
+    roleLabel: 'مدير إدارة المخاطر',
+    roleLabelEn: 'Credit Risk Manager',
+    subtitle: 'حد الاعتماد: حتى 3 مليون جنيه + استثناء السياسة',
+    subtitleEn: 'Credit Limit: Up to 3M EGP + Policy Override',
+    initials: 'SE',
+  },
+  {
+    tier: 'cro',
+    name: 'د. طارق عبد العزيز',
+    nameEn: 'Dr. Tarek Abdelaziz',
+    email: 'tarek.abdelaziz@credix.demo',
+    limit: 'غير محدود (CRO)',
+    roleLabel: 'رئيس قطاع المخاطر (CRO)',
+    roleLabelEn: 'Chief Risk Officer',
+    subtitle: 'صلاحية كاملة غير مقيدة لكافة مبالغ التمويل',
+    subtitleEn: 'Unlimited Delegation for all facilities',
+    initials: 'TA',
+  },
+];
+
 function AuthContent() {
   const { t, language, toggleLanguage, direction } = useLanguage();
   const { signIn } = useAuth();
@@ -105,6 +157,18 @@ function AuthContent() {
   const [portalMismatchRole, setPortalMismatchRole] = useState<UserRole | null>(null);
   const [pendingVerification, setPendingVerification] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [selectedOfficerTier, setSelectedOfficerTier] = useState<string>('senior_officer');
+
+  const handleOfficerTierSelect = (tierKey: string) => {
+    setSelectedOfficerTier(tierKey);
+    const targetOfficer = OFFICER_TIER_DEMOS.find((o) => o.tier === tierKey);
+    if (targetOfficer) {
+      setEmail(targetOfficer.email);
+      setPassword(DEMO_CREDENTIALS.officer.password);
+      setFormError('');
+      setPortalMismatchRole(null);
+    }
+  };
 
   const handleRoleChange = useCallback((role: UserRole) => {
     setSelectedRole(role);
@@ -113,10 +177,16 @@ function AuthContent() {
     setSuccessMessage('');
     setNeedsVerification(false);
     if (isDemoMode && authMode === 'signin') {
-      setEmail(DEMO_CREDENTIALS[role].email);
-      setPassword(DEMO_CREDENTIALS[role].password);
+      if (role === 'officer') {
+        const targetOfficer = OFFICER_TIER_DEMOS.find((o) => o.tier === selectedOfficerTier) || OFFICER_TIER_DEMOS[1];
+        setEmail(targetOfficer.email);
+        setPassword(DEMO_CREDENTIALS.officer.password);
+      } else {
+        setEmail(DEMO_CREDENTIALS.client.email);
+        setPassword(DEMO_CREDENTIALS.client.password);
+      }
     }
-  }, [authMode]);
+  }, [authMode, selectedOfficerTier]);
 
   const handleModeChange = (mode: 'signin' | 'signup') => {
     setAuthMode(mode);
@@ -351,32 +421,82 @@ function AuthContent() {
             </div>
           </div>
 
-          {/* Subtle Demo Identity Indicator */}
+          {/* Subtle Demo Identity Indicator & Tier Selector */}
           {isDemoMode && authMode === 'signin' && (
-            <div className="p-3 rounded-2xl bg-surface-subtle border border-border flex items-center justify-between gap-3 text-start">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-brand-navy text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {DEMO_CREDENTIALS[selectedRole].initials}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-bold text-text-primary">
-                      {language === 'ar'
-                        ? DEMO_CREDENTIALS[selectedRole].name
-                        : DEMO_CREDENTIALS[selectedRole].nameEn}
-                    </span>
-                    <span className="px-1.5 py-0.2 rounded-md bg-surface text-[10px] font-bold text-brand-navy border border-border shrink-0">
-                      {t('auth.demoAccount')}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-text-secondary truncate">
-                    {language === 'ar'
-                      ? DEMO_CREDENTIALS[selectedRole].subtitle
-                      : DEMO_CREDENTIALS[selectedRole].subtitleEn}
-                  </p>
-                </div>
-              </div>
-              <Sparkles className="w-4 h-4 text-brand-navy shrink-0 opacity-70" />
+            <div className="p-3 rounded-2xl bg-surface-subtle border border-border space-y-3 text-start">
+              {(() => {
+                const isOfficer = selectedRole === 'officer';
+                const activeOfficer = OFFICER_TIER_DEMOS.find((o) => o.tier === selectedOfficerTier) || OFFICER_TIER_DEMOS[1];
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-brand-navy text-white flex items-center justify-center text-xs font-bold shrink-0">
+                          {isOfficer ? activeOfficer.initials : DEMO_CREDENTIALS.client.initials}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-text-primary">
+                              {language === 'ar'
+                                ? (isOfficer ? activeOfficer.name : DEMO_CREDENTIALS.client.name)
+                                : (isOfficer ? activeOfficer.nameEn : DEMO_CREDENTIALS.client.nameEn)}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded-md bg-surface text-[10px] font-bold text-brand-navy border border-border shrink-0">
+                              {t('auth.demoAccount')}
+                            </span>
+                            {isOfficer && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-semantic-success-subtle text-[10px] font-bold text-semantic-success border border-semantic-success/20 shrink-0">
+                                <Shield className="w-2.5 h-2.5" />
+                                {activeOfficer.limit}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-text-secondary truncate mt-0.5">
+                            {language === 'ar'
+                              ? (isOfficer ? activeOfficer.subtitle : DEMO_CREDENTIALS.client.subtitle)
+                              : (isOfficer ? activeOfficer.subtitleEn : DEMO_CREDENTIALS.client.subtitleEn)}
+                          </p>
+                        </div>
+                      </div>
+                      <Sparkles className="w-4 h-4 text-brand-navy shrink-0 opacity-70" />
+                    </div>
+
+                    {/* Officer Delegation Tier Selector Pills */}
+                    {isOfficer && (
+                      <div className="pt-2 border-t border-border">
+                        <p className="text-[10px] font-bold text-text-muted mb-1.5">
+                          {language === 'ar' ? 'اختر رتبة الصلاحية الائتمانية للتجربة:' : 'Select Officer Delegation Tier:'}
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {OFFICER_TIER_DEMOS.map((tierItem) => (
+                            <button
+                              key={tierItem.tier}
+                              type="button"
+                              onClick={() => handleOfficerTierSelect(tierItem.tier)}
+                              className={`px-2 py-1.5 rounded-xl text-[10px] font-bold transition-all text-center border ${
+                                selectedOfficerTier === tierItem.tier
+                                  ? 'bg-brand-navy text-white border-brand-navy shadow-xs'
+                                  : 'bg-surface hover:bg-surface-subtle text-text-secondary border-border'
+                              }`}
+                            >
+                              <div className="truncate">
+                                {tierItem.tier === 'junior_officer'
+                                  ? 'مبتدئ (250k)'
+                                  : tierItem.tier === 'senior_officer'
+                                  ? 'Senior (750k)'
+                                  : tierItem.tier === 'risk_manager'
+                                  ? 'مدير (3M)'
+                                  : 'CRO (غير محدود)'}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
