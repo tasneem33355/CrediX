@@ -146,15 +146,15 @@ def remove_application(
     db: Session = Depends(get_db),
     officer: User = Depends(require_officer),
 ):
-    """Delete a loan application (Risk Managers & CRO only; junior/senior cannot delete)."""
+    """Delete a loan application (officers only; junior officers cannot delete)."""
     tier = getattr(officer, "officer_tier", None)
     can_override = getattr(officer, "can_override_policy", False)
-    if tier in {"junior_officer", "senior_officer"} and not can_override:
+    if tier == "junior_officer" and not can_override:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "INSUFFICIENT_PRIVILEGE",
-                "message": "حذف ملفات التمويل مقصور على مديري المخاطر (Risk Managers) أو رئيس القطاع (CRO) فقط.",
+                "message": "حذف ملفات التمويل غير مصرح به لمسؤولي الائتمان المبتدئين.",
             },
         )
     if not delete_application(db, app_id, actor=officer):
