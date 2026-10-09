@@ -248,6 +248,32 @@ def validate_document_quality_and_tampering(ocr_data: Dict[str, Any]) -> List[Di
     return warnings
 
 
+def validate_cross_document_job_consistency(ocr_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Verify that job title / occupation across documents are semantically compatible using Vector Taxonomy."""
+    from app.services.semantic_taxonomy import get_taxonomy_resolver
+    warnings: List[Dict[str, Any]] = []
+
+    nid_occ = (ocr_data.get("national_id_fields") or {}).get("occupation")
+    nid_occ_str = nid_occ.get("value") if isinstance(nid_occ, dict) else nid_occ
+
+    sal_occ = (ocr_data.get("salary_certificate_fields") or {}).get("job_title")
+    sal_occ_str = sal_occ.get("value") if isinstance(sal_occ, dict) else sal_occ
+
+    if nid_occ_str and sal_occ_str:
+        resolver = get_taxonomy_resolver()
+        res = resolver.match_job_titles(str(nid_occ_str), str(sal_occ_str))
+        if not res.get("consistent"):
+            warnings.append({
+                "field": "occupation_mismatch",
+                "severity": "medium",
+                "code": "OCCUPATION_DISCREPANCY",
+                "message": f"تفاوت في المسمى الوظيفي: بالبطاقة «{nid_occ_str}» بينما بشهادة الراتب «{sal_occ_str}» ({res.get('verdict_ar')})",
+                "message_en": f"Occupation discrepancy between National ID ({nid_occ_str}) and Salary Certificate ({sal_occ_str})",
+                "similarity_score": res.get("score"),
+            })
+    return warnings
+
+
 def run_full_ocr_validation(ocr_data: Dict[str, Any]) -> Dict[str, Any]:
     """Execute all 5 validation checks and extract normalized profile details.
 
@@ -333,6 +359,10 @@ def run_full_ocr_validation(ocr_data: Dict[str, Any]) -> Dict[str, Any]:
     # 5. Quality & Tampering
     quality_warnings = validate_document_quality_and_tampering(ocr_data)
     all_warnings.extend(quality_warnings)
+
+    # 6. Semantic Vector Taxonomy Cross-Document Job Compatibility
+    job_warnings = validate_cross_document_job_consistency(ocr_data)
+    all_warnings.extend(job_warnings)
 
     # Append any explicit raw warnings present in OCR payload
     raw_warnings = consistency.get("warnings") or []

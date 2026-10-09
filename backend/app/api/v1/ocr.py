@@ -164,3 +164,30 @@ def get_application_extractions(
         }
         for it in items
     ]
+
+
+@router.get("/semantic-match")
+def semantic_match_endpoint(
+    term: str,
+    compare_with: Optional[str] = None,
+    threshold: float = 0.55,
+    current_user: User = Depends(require_authenticated_user),
+):
+    """Resolve a multi-bank financial term or compare job titles using Vector Taxonomy Embeddings."""
+    from app.services.semantic_taxonomy import get_taxonomy_resolver
+    resolver = get_taxonomy_resolver()
+    if compare_with:
+        return resolver.match_job_titles(term, compare_with)
+    return resolver.resolve_field(term, threshold=threshold)
+
+
+@router.post("/normalize-schema")
+def normalize_schema_endpoint(
+    payload: Dict[str, Any],
+    current_user: User = Depends(require_authenticated_user),
+):
+    """Normalize arbitrary multi-bank OCR fields into the canonical financial schema."""
+    from app.services.semantic_taxonomy import get_taxonomy_resolver
+    resolver = get_taxonomy_resolver()
+    return resolver.normalize_extracted_fields(payload)
+
