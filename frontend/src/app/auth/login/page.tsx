@@ -16,6 +16,7 @@ import {
   Globe,
   Sparkles,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuth } from '@/context/AuthContext';
@@ -101,12 +102,14 @@ function AuthContent() {
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [formError, setFormError] = useState('');
+  const [portalMismatchRole, setPortalMismatchRole] = useState<UserRole | null>(null);
   const [pendingVerification, setPendingVerification] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
 
   const handleRoleChange = useCallback((role: UserRole) => {
     setSelectedRole(role);
     setFormError('');
+    setPortalMismatchRole(null);
     setSuccessMessage('');
     setNeedsVerification(false);
     if (isDemoMode && authMode === 'signin') {
@@ -119,6 +122,7 @@ function AuthContent() {
     setAuthMode(mode);
     setSuccessMessage('');
     setFormError('');
+    setPortalMismatchRole(null);
     setPendingVerification(false);
     setNeedsVerification(false);
     if (isDemoMode) {
@@ -194,13 +198,32 @@ function AuthContent() {
     }
 
     setLoading(true);
+    setPortalMismatchRole(null);
     try {
       const profile = await signIn(email.trim(), password, selectedRole);
       const actualRole = profile.role;
-      const roleMismatch = actualRole !== selectedRole;
-      setSuccessMessage(roleMismatch
-        ? `This account is a ${actualRole === 'client' ? 'Financing Client' : 'Credit Officer'} profile. We will use its approved CrediX access.`
-        : 'Signed in securely. Loading your CrediX workspace.');
+
+      if (actualRole !== selectedRole) {
+        setPortalMismatchRole(actualRole);
+        throw new SignInError(
+          selectedRole === 'client'
+            ? (language === 'ar'
+                ? 'عفواً، هذا الحساب مخصص لمسؤول ائتمان ولا يمكن استخدامه عبر بوابة العملاء. يرجى التبديل إلى تبويب "موظف ائتمان".'
+                : 'This account belongs to a Credit Officer and cannot be accessed via the Client Portal. Please switch to the Credit Officer tab.')
+            : (language === 'ar'
+                ? 'عفواً، هذا الحساب مسجل كعميل مقترض ولا يملك صلاحيات موظف ائتمان. يرجى التبديل إلى تبويب "مقدم طلب تمويل".'
+                : 'This account belongs to a Client and does not have Credit Officer permissions. Please switch to the Financing Applicant tab.'),
+          selectedRole === 'client'
+            ? 'PORTAL_MISMATCH_OFFICER_ON_CLIENT_PORTAL'
+            : 'PORTAL_MISMATCH_CLIENT_ON_OFFICER_PORTAL'
+        );
+      }
+
+      setSuccessMessage(
+        language === 'ar'
+          ? 'تم تسجيل الدخول بنجاح. جاري فتح مساحة العمل...'
+          : 'Signed in securely. Loading your CrediX workspace...'
+      );
 
       const redirectParam = searchParams.get('redirect');
       const target = actualRole === 'client'
@@ -212,13 +235,18 @@ function AuthContent() {
     } catch (error) {
       if (error instanceof SignInError) {
         setFormError(error.message);
+        if (error.code === 'PORTAL_MISMATCH_OFFICER_ON_CLIENT_PORTAL') {
+          setPortalMismatchRole('officer');
+        } else if (error.code === 'PORTAL_MISMATCH_CLIENT_ON_OFFICER_PORTAL') {
+          setPortalMismatchRole('client');
+        }
         setNeedsVerification(error.code === 'EMAIL_NOT_CONFIRMED');
       } else if (error instanceof AuthApiError) {
         setFormError(error.code === 'PROFILE_NOT_PROVISIONED'
-          ? 'Your CrediX profile could not be prepared. Please try again.'
-          : 'CrediX services are unavailable right now. Please try again.');
+          ? (language === 'ar' ? 'تعذر تجهيز ملف الحساب. حاول مرة أخرى.' : 'Your CrediX profile could not be prepared. Please try again.')
+          : (language === 'ar' ? 'خدمات CrediX غير متاحة حالياً.' : 'CrediX services are unavailable right now. Please try again.'));
       } else {
-        setFormError('We could not sign you in right now. Please try again.');
+        setFormError(language === 'ar' ? 'تعذر تسجيل الدخول. تأكد من البيانات وحاول مرة أخرى.' : 'We could not sign you in right now. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -361,8 +389,31 @@ function AuthContent() {
           )}
 
           {formError && (
-            <div role="alert" className="p-3 bg-semantic-error-bg border border-semantic-error/30 rounded-xl text-xs font-semibold text-semantic-error flex items-center gap-2">
-              <span>{formError}</span>
+            <div role="alert" className="p-3.5 bg-semantic-error-bg border border-semantic-error/30 rounded-2xl text-xs text-semantic-error space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-semantic-error" />
+                <span className="font-semibold leading-relaxed">{formError}</span>
+              </div>
+              {portalMismatchRole && (
+                <div className="pt-2 border-t border-semantic-error/20 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleRoleChange(portalMismatchRole);
+                      setPortalMismatchRole(null);
+                      setFormError('');
+                    }}
+                    className="text-xs font-bold text-brand-navy hover:underline flex items-center gap-1 cursor-pointer bg-surface px-3 py-1.5 rounded-xl border border-border shadow-2xs transition-all active:scale-95"
+                  >
+                    <span>
+                      {portalMismatchRole === 'officer'
+                        ? (language === 'ar' ? 'التبديل إلى بوابة موظف الائتمان' : 'Switch to Credit Officer Portal')
+                        : (language === 'ar' ? 'التبديل إلى بوابة العميل' : 'Switch to Client Portal')}
+                    </span>
+                    <Arrow className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

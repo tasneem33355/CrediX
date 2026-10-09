@@ -4,7 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import type { Session } from '@supabase/supabase-js';
 import type { User, UserRole } from '@/types';
 import { AuthApiError, getCredixProfile } from '@/lib/auth/api';
-import { signInWithCredixProfile } from '@/lib/auth/signin';
+import { signInWithCredixProfile, SignInError } from '@/lib/auth/signin';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { isDemoMode } from '@/lib/config';
 
@@ -123,6 +123,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string, expectedRole: UserRole): Promise<User> => {
     if (isDemoMode) {
       await new Promise((resolve) => window.setTimeout(resolve, 180));
+      const cleanEmail = (email || '').trim().toLowerCase();
+
+      // Check for portal mismatch in demo mode:
+      const isOfficerEmail = cleanEmail.includes('officer') || cleanEmail.includes('sami') || cleanEmail === 'mohamed.sami@credix.demo';
+      const isClientEmail = cleanEmail.includes('client') || cleanEmail.includes('fouad') || cleanEmail === 'ahmed.fouad@credix.demo';
+
+      if (expectedRole === 'client' && isOfficerEmail) {
+        throw new SignInError(
+          'عفواً، هذا الحساب مخصص لمسؤول ائتمان ولا يمكن استخدامه عبر بوابة العملاء. يرجى التبديل إلى تبويب "موظف ائتمان".',
+          'PORTAL_MISMATCH_OFFICER_ON_CLIENT_PORTAL'
+        );
+      }
+
+      if (expectedRole === 'officer' && isClientEmail) {
+        throw new SignInError(
+          'عفواً، هذا الحساب مسجل كعميل مقترض ولا يملك صلاحيات موظف ائتمان. يرجى التبديل إلى تبويب "مقدم طلب تمويل".',
+          'PORTAL_MISMATCH_CLIENT_ON_OFFICER_PORTAL'
+        );
+      }
+
       const demoProfile = expectedRole === 'officer' ? demoOfficer : demoClient;
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('credix_demo_role', expectedRole);
