@@ -439,7 +439,7 @@ export default function AIAssistantPage() {
                 <button
                   type="button"
                   onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-                  className="hidden p-1.5 sm:p-2 rounded-xl border border-border bg-surface hover:bg-surface-subtle text-text-secondary hover:text-brand-navy transition-all cursor-pointer shadow-xs active:scale-95"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-brand-navy hover:bg-surface-subtle transition-all cursor-pointer shadow-xs active:scale-95"
                   title={
                     isHistoryOpen
                       ? (language === 'ar' ? 'إخفاء المحادثات' : 'Collapse conversations')
@@ -452,9 +452,9 @@ export default function AIAssistantPage() {
                   }
                 >
                   {isHistoryOpen ? (
-                    <PanelLeftClose className={clsx('w-4 h-4', direction === 'rtl' && 'scale-x-[-1]')} />
+                    <PanelLeftClose className={clsx('h-5 w-5', direction === 'rtl' && 'scale-x-[-1]')} strokeWidth={2.25} />
                   ) : (
-                    <PanelLeftOpen className={clsx('w-4 h-4', direction === 'rtl' && 'scale-x-[-1]')} />
+                    <PanelLeftOpen className={clsx('h-5 w-5', direction === 'rtl' && 'scale-x-[-1]')} strokeWidth={2.25} />
                   )}
                 </button>
 
