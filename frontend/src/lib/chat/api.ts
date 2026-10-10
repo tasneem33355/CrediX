@@ -24,9 +24,11 @@ type ApiChatMessage = {
 };
 
 function apiBaseUrl(): string {
-  const value = process.env.NEXT_PUBLIC_API_URL;
-  if (!value) throw new Error('NEXT_PUBLIC_API_URL is not configured.');
-  return value.replace(/\/$/, '');
+  const customAiUrl = process.env.NEXT_PUBLIC_AI_ASSISTANT_API_URL;
+  if (customAiUrl) return customAiUrl.replace(/\/$/, '');
+  const generalUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (generalUrl) return generalUrl.replace(/\/$/, '');
+  return 'https://credix-ai-assistant-production.up.railway.app/api/v1';
 }
 
 async function request<T>(path: string, accessToken?: string, init?: RequestInit): Promise<T> {

@@ -44,10 +44,7 @@ export default function AIAssistantPage() {
   const { session } = useAuth();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
-  const [sessions, setSessions] = useState(mockChatSessions);
-  // Do not point live mode at the demo session. The live session is resolved
-  // asynchronously from the API; using ``sess_1`` here causes an immediate
-  // 404 request before the remote session list has loaded.
+  const [sessions, setSessions] = useState<ChatSession[]>(isDemoMode ? mockChatSessions : []);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(isDemoMode ? 'sess_1' : null);
   const [messages, setMessages] = useState<ChatMessage[]>(isDemoMode ? mockInitialChatMessages : []);
   const [inputQuestion, setInputQuestion] = useState('');
