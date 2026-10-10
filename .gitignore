@@ -16,6 +16,16 @@ frontend/next-env.d.ts
 **/.env
 **/.env.*
 !**/.env.example
+venv-rag/
+.venv-rag/
+
+# Local-only AI Assistant/RAG runtime and document index.
+src/ai_assistant/
+src/rag/
+src/rag_data/
+tests/ai_assistant/
+ai_assistant_service/
+
 
 # Python runtime and local data
 backend/venv/
@@ -23,6 +33,18 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/.pytest_cache/
 backend/*.db
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# Generated Python caches and local test state
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]
+
+# Local evaluation outputs and run caches
+artifacts/
 backend/**/*.py[cod]
 
 # Frontend local files
