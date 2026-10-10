@@ -19,6 +19,13 @@ frontend/next-env.d.ts
 venv-rag/
 .venv-rag/
 
+# Local-only AI Assistant/RAG runtime and document index.
+src/ai_assistant/
+src/rag/
+src/rag_data/
+tests/ai_assistant/
+ai_assistant_service/
+
 
 # Python runtime and local data
 backend/venv/

@@ -5,12 +5,7 @@
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "app/main.py",
-      "maxDuration": 60,
-      "includeFiles": [
-        "../src/ai_assistant/**",
-        "../src/rag/**",
-        "../src/rag_data/current/**"
-      ]
+      "maxDuration": 60
     },
     "frontend": {
       "root": "frontend",
