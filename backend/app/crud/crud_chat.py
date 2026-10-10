@@ -1,9 +1,9 @@
 """CRUD operations for AI Assistant Chat Sessions and Messages."""
 
 import logging
-import random
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
+from app.database import new_id
 from app.models.chat import ChatSession, ChatMessage
 from app.schemas.chat import ChatSessionCreate, ChatMessageCreate
 
@@ -22,7 +22,9 @@ def get_chat_session_by_id(db: Session, session_id: str) -> Optional[ChatSession
 
 
 def create_chat_session(db: Session, session_in: ChatSessionCreate, user_id: Optional[str] = None) -> ChatSession:
-    session_id = f"sess_{random.randint(100, 999)}"
+    # Random three-digit IDs collided with existing/seeded sessions, causing a
+    # newly-created chat to display another session's old demo messages.
+    session_id = new_id("sess")
     db_session = ChatSession(
         id=session_id,
         user_id=user_id,
@@ -61,7 +63,7 @@ def add_chat_message_and_respond(
     Auto is conservative and falls back to grounded for ambiguous queries;
     general mode is explicit (or selected only by a clear general intent).
     """
-    user_msg_id = f"msg_user_{random.randint(1000, 9999)}"
+    user_msg_id = new_id("msg_user")
     user_msg = ChatMessage(
         id=user_msg_id,
         session_id=session_id,
@@ -139,7 +141,7 @@ def add_chat_message_and_respond(
         segments = []
     suggested_action = None
 
-    bot_msg_id = f"msg_bot_{random.randint(1000, 9999)}"
+    bot_msg_id = new_id("msg_bot")
     bot_msg = ChatMessage(
         id=bot_msg_id,
         session_id=session_id,
@@ -171,7 +173,7 @@ def add_chat_message_and_respond(
 def save_chat_exchange(db: Session, session_id: str, message_in: ChatMessageCreate, answer: str):
     """Persist an answer produced by the legacy application explainer."""
     user_msg = ChatMessage(
-        id=f"msg_user_{random.randint(1000, 9999)}",
+        id=new_id("msg_user"),
         session_id=session_id,
         sender="user",
         text=message_in.text,
@@ -180,7 +182,7 @@ def save_chat_exchange(db: Session, session_id: str, message_in: ChatMessageCrea
         citations=[],
     )
     bot_msg = ChatMessage(
-        id=f"msg_bot_{random.randint(1000, 9999)}",
+        id=new_id("msg_bot"),
         session_id=session_id,
         sender="assistant",
         text=answer,
