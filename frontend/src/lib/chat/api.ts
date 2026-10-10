@@ -107,10 +107,24 @@ export async function postChatMessage(
   accessToken?: string,
   mode: 'auto' | 'grounded' | 'general' = 'auto',
 ): Promise<ChatMessage[]> {
-  const messages = await request<ApiChatMessage[]>(`/ai-assistant/sessions/${encodeURIComponent(sessionId)}/messages`, accessToken, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, textEn: text, mode }),
-  });
+  const sendRequest = async (m: 'auto' | 'grounded' | 'general') =>
+    request<ApiChatMessage[]>(`/ai-assistant/sessions/${encodeURIComponent(sessionId)}/messages`, accessToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, textEn: text, mode: m }),
+    });
+
+  let messages = await sendRequest(mode);
+
+  // If the RAG index has insufficient evidence and the user chose auto/grounded,
+  // automatically retry with general LLM so the assistant always gives a useful answer.
+  const assistantMsg = messages.find((m) => m.sender === 'assistant');
+  if (
+    assistantMsg?.answerMode === 'insufficient_evidence' &&
+    (mode === 'auto' || mode === 'grounded')
+  ) {
+    messages = await sendRequest('general');
+  }
+
   return messages.map(toMessage);
 }
