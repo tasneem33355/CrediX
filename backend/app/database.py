@@ -42,3 +42,18 @@ def get_db() -> Generator[Session, None, None]:
 def new_id(prefix: str) -> str:
     """Collision-safe opaque identifier, e.g. ``doc_3fa91c0b7d2e`` (48 random bits)."""
     return f"{prefix}_{secrets.token_hex(6)}"
+
+
+def ensure_schema_compatibility() -> None:
+    """Auto-migrate schema changes on startup so existing databases remain compatible."""
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS officer_tier VARCHAR(50);"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_limit_egp DOUBLE PRECISION DEFAULT 0.0;"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_override_policy BOOLEAN DEFAULT FALSE;"))
+    except Exception:
+        # Prevent non-blocking startup failure if read-only user or tables not yet created
+        pass
+

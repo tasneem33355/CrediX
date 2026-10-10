@@ -41,6 +41,14 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
+@app.on_event("startup")
+def on_startup():
+    """Ensure database schema has recent column migrations."""
+    from app.database import ensure_schema_compatibility
+    ensure_schema_compatibility()
+
+
+
 @app.get("/", tags=["Health & Status"])
 def root():
     """Root health check endpoint."""
