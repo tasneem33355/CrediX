@@ -16,19 +16,40 @@ JSONType = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 def upgrade() -> None:
-    op.alter_column("loan_applications", "requested_amount", existing_type=sa.Float(), type_=sa.Numeric(14, 2),
-                    existing_nullable=False, postgresql_using="round(requested_amount::numeric, 2)")
-    op.alter_column("case_cards", "amount", existing_type=sa.Float(), type_=sa.Numeric(14, 2),
-                    existing_nullable=False, postgresql_using="round(amount::numeric, 2)")
+    # SQLite cannot execute ``ALTER COLUMN ... TYPE`` or add constraints in
+    # place. Batch mode recreates the table while preserving existing rows;
+    # PostgreSQL keeps the native ALTER path and its explicit cast.
+    is_sqlite = op.get_bind().dialect.name == "sqlite"
+    if is_sqlite:
+        with op.batch_alter_table("loan_applications", recreate="always") as batch:
+            batch.alter_column("requested_amount", existing_type=sa.Float(), type_=sa.Numeric(14, 2),
+                               existing_nullable=False)
+        with op.batch_alter_table("case_cards", recreate="always") as batch:
+            batch.alter_column("amount", existing_type=sa.Float(), type_=sa.Numeric(14, 2),
+                               existing_nullable=False)
+    else:
+        op.alter_column("loan_applications", "requested_amount", existing_type=sa.Float(), type_=sa.Numeric(14, 2),
+                        existing_nullable=False, postgresql_using="round(requested_amount::numeric, 2)")
+        op.alter_column("case_cards", "amount", existing_type=sa.Float(), type_=sa.Numeric(14, 2),
+                        existing_nullable=False, postgresql_using="round(amount::numeric, 2)")
 
     op.execute("UPDATE loan_applications SET submitted_at = created_at WHERE submitted_at IS NULL")
 
-    op.add_column("loan_applications", sa.Column("final_decision", sa.String(length=20), nullable=True))
-    op.add_column("loan_applications", sa.Column("decided_by", sa.String(length=50), nullable=True))
-    op.add_column("loan_applications", sa.Column("decided_at", sa.DateTime(), nullable=True))
-    op.add_column("loan_applications", sa.Column("decision_notes", sa.Text(), nullable=True))
-    op.create_foreign_key("fk_loan_applications_decided_by_users", "loan_applications", "users",
-                          ["decided_by"], ["id"], ondelete="SET NULL")
+    if is_sqlite:
+        with op.batch_alter_table("loan_applications", recreate="always") as batch:
+            batch.add_column(sa.Column("final_decision", sa.String(length=20), nullable=True))
+            batch.add_column(sa.Column("decided_by", sa.String(length=50), nullable=True))
+            batch.add_column(sa.Column("decided_at", sa.DateTime(), nullable=True))
+            batch.add_column(sa.Column("decision_notes", sa.Text(), nullable=True))
+            batch.create_foreign_key("fk_loan_applications_decided_by_users", "users",
+                                     ["decided_by"], ["id"], ondelete="SET NULL")
+    else:
+        op.add_column("loan_applications", sa.Column("final_decision", sa.String(length=20), nullable=True))
+        op.add_column("loan_applications", sa.Column("decided_by", sa.String(length=50), nullable=True))
+        op.add_column("loan_applications", sa.Column("decided_at", sa.DateTime(), nullable=True))
+        op.add_column("loan_applications", sa.Column("decision_notes", sa.Text(), nullable=True))
+        op.create_foreign_key("fk_loan_applications_decided_by_users", "loan_applications", "users",
+                              ["decided_by"], ["id"], ondelete="SET NULL")
     op.execute("""
         UPDATE loan_applications
            SET final_decision = CASE status WHEN 'approved' THEN 'approve' ELSE 'reject' END,
@@ -36,9 +57,16 @@ def upgrade() -> None:
          WHERE status IN ('approved', 'rejected') AND final_decision IS NULL
     """)
 
-    op.create_check_constraint("ck_loan_applications_amount_positive", "loan_applications", "requested_amount > 0")
-    op.create_check_constraint("ck_loan_applications_tenure_range", "loan_applications", "tenure_months BETWEEN 1 AND 480")
-    op.create_check_constraint("ck_case_cards_amount_positive", "case_cards", "amount > 0")
+    if is_sqlite:
+        with op.batch_alter_table("loan_applications", recreate="always") as batch:
+            batch.create_check_constraint("ck_loan_applications_amount_positive", "requested_amount > 0")
+            batch.create_check_constraint("ck_loan_applications_tenure_range", "tenure_months BETWEEN 1 AND 480")
+        with op.batch_alter_table("case_cards", recreate="always") as batch:
+            batch.create_check_constraint("ck_case_cards_amount_positive", "amount > 0")
+    else:
+        op.create_check_constraint("ck_loan_applications_amount_positive", "loan_applications", "requested_amount > 0")
+        op.create_check_constraint("ck_loan_applications_tenure_range", "loan_applications", "tenure_months BETWEEN 1 AND 480")
+        op.create_check_constraint("ck_case_cards_amount_positive", "case_cards", "amount > 0")
 
     op.create_table(
         "extraction_results",

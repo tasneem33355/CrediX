@@ -43,8 +43,11 @@ export default function AIAssistantPage() {
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
   const [sessions, setSessions] = useState(mockChatSessions);
-  const [activeSessionId, setActiveSessionId] = useState('sess_1');
-  const [messages, setMessages] = useState<ChatMessage[]>(mockInitialChatMessages);
+  // Do not point live mode at the demo session. The live session is resolved
+  // asynchronously from the API; using ``sess_1`` here causes an immediate
+  // 404 request before the remote session list has loaded.
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(isDemoMode ? 'sess_1' : null);
+  const [messages, setMessages] = useState<ChatMessage[]>(isDemoMode ? mockInitialChatMessages : []);
   const [inputQuestion, setInputQuestion] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
@@ -78,7 +81,9 @@ export default function AIAssistantPage() {
         const firstSession = remoteSessions[0];
         setSessions(remoteSessions);
         setActiveSessionId(firstSession.id);
-        setMessages(await getChatMessages(firstSession.id, accessToken));
+        // The session-message effect below owns message loading. Keeping one
+        // request path avoids duplicate requests and stale-session races.
+        setMessages([]);
       } catch (error) {
         console.error('Could not load the live RAG chat.', error);
       }

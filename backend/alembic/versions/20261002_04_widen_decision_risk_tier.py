@@ -17,20 +17,28 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "decision_audit_logs",
-        "risk_tier",
-        existing_type=sa.String(50),
-        type_=sa.String(150),
-        existing_nullable=True,
-    )
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table("decision_audit_logs", recreate="always") as batch:
+            batch.alter_column("risk_tier", existing_type=sa.String(50), type_=sa.String(150), existing_nullable=True)
+    else:
+        op.alter_column(
+            "decision_audit_logs",
+            "risk_tier",
+            existing_type=sa.String(50),
+            type_=sa.String(150),
+            existing_nullable=True,
+        )
 
 
 def downgrade() -> None:
-    op.alter_column(
-        "decision_audit_logs",
-        "risk_tier",
-        existing_type=sa.String(150),
-        type_=sa.String(50),
-        existing_nullable=True,
-    )
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table("decision_audit_logs", recreate="always") as batch:
+            batch.alter_column("risk_tier", existing_type=sa.String(150), type_=sa.String(50), existing_nullable=True)
+    else:
+        op.alter_column(
+            "decision_audit_logs",
+            "risk_tier",
+            existing_type=sa.String(150),
+            type_=sa.String(50),
+            existing_nullable=True,
+        )
