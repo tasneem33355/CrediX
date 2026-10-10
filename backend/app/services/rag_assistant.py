@@ -14,7 +14,25 @@ from pathlib import Path
 from typing import Any
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+def _find_repository_root() -> Path:
+    """Find the checkout root in both monorepo and Vercel service layouts.
+
+    Locally this module lives at ``repo/backend/app/...``. Vercel builds the
+    backend service from ``backend`` and can place it at ``/var/task/app/...``;
+    a fixed ``parents[3]`` therefore points one level too high in production.
+    Search for the actual RAG package instead of assuming a directory depth.
+    """
+
+    module_path = Path(__file__).resolve()
+    for parent in module_path.parents:
+        if (parent / "src" / "ai_assistant").is_dir() and (parent / "src" / "rag").is_dir():
+            return parent
+    # Keep a deterministic fallback for diagnostics; callers will raise a
+    # clear import/index error if the deployment omitted the RAG bundle.
+    return module_path.parents[3]
+
+
+REPOSITORY_ROOT = _find_repository_root()
 
 
 @lru_cache(maxsize=1)
