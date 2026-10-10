@@ -46,13 +46,41 @@ def new_id(prefix: str) -> str:
 
 def ensure_schema_compatibility() -> None:
     """Auto-migrate schema changes on startup so existing databases remain compatible."""
-    from sqlalchemy import text
+    from sqlalchemy import inspect, text
     try:
         with engine.begin() as conn:
             if conn.dialect.name == "postgresql":
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS officer_tier VARCHAR(50);"))
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_limit_egp DOUBLE PRECISION DEFAULT 0.0;"))
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_override_policy BOOLEAN DEFAULT FALSE;"))
+
+                # The assistant provenance migration is intentionally also
+                # applied here.  Vercel/serverless deployments may start the
+                # API without running Alembic against the configured Supabase
+                # database; without these nullable columns every chat write
+                # fails with ``UndefinedColumn`` once the ORM serializes the
+                # new answer metadata.
+                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS answer_mode VARCHAR(30);"))
+                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS provenance VARCHAR(30);"))
+                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS disclaimer TEXT;"))
+                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS segments JSON;"))
+            elif conn.dialect.name == "sqlite":
+                # SQLite has no portable ``ADD COLUMN IF NOT EXISTS``.  Check
+                # the live table first so this remains safe and idempotent for
+                # local databases created before the provenance migration.
+                inspector = inspect(conn)
+                if "chat_messages" not in inspector.get_table_names():
+                    return
+                existing = {column["name"] for column in inspector.get_columns("chat_messages")}
+                sqlite_columns = {
+                    "answer_mode": "VARCHAR(30)",
+                    "provenance": "VARCHAR(30)",
+                    "disclaimer": "TEXT",
+                    "segments": "JSON",
+                }
+                for name, column_type in sqlite_columns.items():
+                    if name not in existing:
+                        conn.execute(text(f'ALTER TABLE chat_messages ADD COLUMN "{name}" {column_type}'))
     except Exception:
         # Prevent non-blocking startup failure if read-only user or tables not yet created
         pass
