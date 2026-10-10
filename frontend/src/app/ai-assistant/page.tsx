@@ -333,20 +333,11 @@ export default function AIAssistantPage() {
           {/* Left Sessions Sidebar (Collapsible) */}
           {isHistoryOpen && (
             <Card className="w-full lg:w-64 xl:w-72 shrink-0 p-3.5 flex flex-col justify-between overflow-hidden transition-all duration-300 min-h-0 h-full">
-              <div className="flex items-center justify-between px-1 pb-2.5 border-b border-border text-xs font-bold text-text-primary shrink-0">
+              <div className="flex items-center px-1 pb-2.5 border-b border-border text-xs font-bold text-text-primary shrink-0">
                 <div className="flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-brand-navy" />
                   <span>{t('ai.chatHistory')}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsHistoryOpen(false)}
-                  className="p-1.5 rounded-lg text-text-secondary hover:text-brand-navy hover:bg-surface-subtle transition-colors cursor-pointer"
-                  title={language === 'ar' ? 'إخفاء المحادثات' : 'Collapse conversations'}
-                  aria-label={language === 'ar' ? 'إخفاء المحادثات' : 'Collapse conversations'}
-                >
-                  <PanelLeftClose className={clsx('w-4 h-4', direction === 'rtl' && 'scale-x-[-1]')} />
-                </button>
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-1.5 my-2 min-h-0 pr-1">
