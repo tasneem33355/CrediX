@@ -100,8 +100,8 @@ _GENERAL_INTENT = re.compile(
     # Keep broad fact forms such as "what is the limit?" conservative: they
     # may be asking for a document-specific value, so they stay grounded in
     # Auto mode unless the user explicitly asks for a general explanation.
-    r"\b(?:explain|define|meaning of|what does\s+[^?]*\s+mean|in general|generally|concept of)\b"
-    r"|(?:اشرح|يعني\s*ايه|ما\s+معنى|بشكل\s+عام|مفهوم)",
+    r"\b(?:h+i+|hello|hey|thanks?|thank\s+you|explain|define|meaning of|what does\s+[^?]*\s+mean|in general|generally|concept of)\b"
+    r"|(?:اهلا|أهلا|مرحبا|مرحباً|سلام|شكرا|شكرًا|اشرح|يعني\s*ايه|ما\s+معنى|بشكل\s+عام|مفهوم)",
     re.IGNORECASE,
 )
 _HYBRID_INTENT = re.compile(

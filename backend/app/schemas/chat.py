@@ -69,7 +69,12 @@ class ChatMessageResponse(BaseModel):
 
         if self.answer_mode == "general":
             if self.provenance != "ai_generated" or self.citations:
-                raise ValueError("general responses must be AI-generated and citation-free")
+                # Older deployments persisted provider failures as ``general``
+                # with unavailable provenance. Keep those histories readable
+                # while preserving the fail-closed source contract.
+                self.answer_mode = "insufficient_evidence"
+                self.citations = []
+                self.segments = []
         if self.answer_mode == "insufficient_evidence" and self.citations:
             raise ValueError("insufficient-evidence responses cannot contain citations")
         for segment in self.segments or []:

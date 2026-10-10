@@ -126,7 +126,9 @@ def add_chat_message_and_respond(
         if failed_general:
             bot_text = "تعذر تشغيل المساعد العام حالياً. يرجى المحاولة مرة أخرى."
             bot_text_en = "The general AI assistant is temporarily unavailable. Please try again."
-            answer_mode = "general"
+            # A provider failure is not an AI-generated answer. Mark it as
+            # fail-closed so the API cannot claim General AI provenance.
+            answer_mode = "insufficient_evidence"
         elif message_in.mode == "auto":
             arabic = any("\u0600" <= char <= "\u06ff" for char in message_in.text)
             bot_text = (
