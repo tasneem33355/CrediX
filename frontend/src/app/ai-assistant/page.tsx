@@ -147,15 +147,16 @@ export default function AIAssistantPage() {
       const responseMessages = await postChatMessage(sessionId, q, accessToken, assistantMode);
       const assistantMessage = responseMessages.find((message) => message.sender === 'assistant');
       if (assistantMessage) setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Live RAG request failed.', error);
+      const errMsg = error?.message || 'تعذر تشغيل مساعد المستندات حالياً. يرجى المحاولة مرة أخرى.';
       setMessages((prev) => [
         ...prev,
         {
           id: `msg_error_${Date.now()}`,
           sender: 'assistant',
-          text: 'تعذر تشغيل مساعد المستندات حالياً. يرجى المحاولة مرة أخرى.',
-          textEn: 'The document assistant is temporarily unavailable. Please try again.',
+          text: errMsg,
+          textEn: errMsg,
           timestamp: language === 'ar' ? 'الآن' : 'Now',
         },
       ]);
