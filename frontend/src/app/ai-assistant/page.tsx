@@ -16,6 +16,7 @@ import {
   ExternalLink,
   PanelLeftClose,
   PanelLeftOpen,
+  Trash2,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLanguage } from '@/context/LanguageContext';
@@ -35,6 +36,7 @@ import {
   getChatMessages,
   getChatSessions,
   postChatMessage,
+  deleteChatSession,
 } from '@/lib/chat/api';
 
 export default function AIAssistantPage() {
@@ -51,6 +53,7 @@ export default function AIAssistantPage() {
   const [inputQuestion, setInputQuestion] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   // Auto is conservative; document-grounded remains the safe fallback.
   const [assistantMode, setAssistantMode] = useState<'auto' | 'grounded' | 'general'>('auto');
 
@@ -258,6 +261,53 @@ export default function AIAssistantPage() {
     }, 1000);
   };
 
+  const handleDeleteSession = async (event: React.MouseEvent, sessionId: string) => {
+    event.stopPropagation();
+    const confirmed = window.confirm(
+      language === 'ar'
+        ? 'هل تريد حذف هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.'
+        : 'Delete this conversation? This action cannot be undone.',
+    );
+    if (!confirmed) return;
+
+    setDeletingSessionId(sessionId);
+    try {
+      if (!isDemoMode) await deleteChatSession(sessionId, accessToken);
+      const remaining = sessions.filter((item) => item.id !== sessionId);
+      setSessions(remaining);
+
+      if (activeSessionId !== sessionId) return;
+      if (remaining.length > 0) {
+        setActiveSessionId(remaining[0].id);
+        setMessages([]);
+        return;
+      }
+
+      if (isDemoMode) {
+        setActiveSessionId(null);
+        setMessages([]);
+        return;
+      }
+
+      const created = await createChatSession(
+        language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+        accessToken,
+      );
+      setSessions([created]);
+      setActiveSessionId(created.id);
+      setMessages([]);
+    } catch (error) {
+      console.error('Could not delete chat session.', error);
+      window.alert(
+        language === 'ar'
+          ? 'تعذر حذف المحادثة حالياً. حاول مرة أخرى.'
+          : 'The conversation could not be deleted. Please try again.',
+      );
+    } finally {
+      setDeletingSessionId(null);
+    }
+  };
+
   return (
     <AppLayout breadcrumbTitle={t('nav.aiAssistant')} fullHeight>
       <div className="flex-1 flex flex-col min-h-0 h-full gap-3 sm:gap-4">
@@ -303,23 +353,43 @@ export default function AIAssistantPage() {
                 {sessions.map((sess) => {
                   const isActive = activeSessionId === sess.id;
                   return (
-                    <button
+                    <div
                       key={sess.id}
                       onClick={() => setActiveSessionId(sess.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setActiveSessionId(sess.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                       className={`w-full p-2.5 rounded-xl text-start transition-all cursor-pointer ${
                         isActive
                           ? 'bg-[#E8EEF5] border border-brand-navy/30 text-brand-navy font-semibold'
                           : 'hover:bg-surface-subtle text-text-secondary'
                       }`}
                     >
-                      <p className="text-xs font-bold text-text-primary truncate">
-                        {language === 'ar' ? sess.title : sess.titleEn}
-                      </p>
+                      <div className="flex items-start gap-2">
+                        <p className="text-xs font-bold text-text-primary truncate flex-1">
+                          {language === 'ar' ? sess.title : sess.titleEn}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={(event) => void handleDeleteSession(event, sess.id)}
+                          disabled={deletingSessionId === sess.id}
+                          className="shrink-0 p-1 rounded-md text-text-muted hover:text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                          title={language === 'ar' ? 'حذف المحادثة' : 'Delete conversation'}
+                          aria-label={language === 'ar' ? 'حذف المحادثة' : 'Delete conversation'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <p className="text-[10px] text-text-muted mt-1 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         <span>{language === 'ar' ? sess.timeAgo : sess.timeAgoEn}</span>
                       </p>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -369,7 +439,7 @@ export default function AIAssistantPage() {
                 <button
                   type="button"
                   onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-                  className="p-1.5 sm:p-2 rounded-xl border border-border bg-surface hover:bg-surface-subtle text-text-secondary hover:text-brand-navy transition-all cursor-pointer shadow-xs active:scale-95"
+                  className="hidden p-1.5 sm:p-2 rounded-xl border border-border bg-surface hover:bg-surface-subtle text-text-secondary hover:text-brand-navy transition-all cursor-pointer shadow-xs active:scale-95"
                   title={
                     isHistoryOpen
                       ? (language === 'ar' ? 'إخفاء المحادثات' : 'Collapse conversations')

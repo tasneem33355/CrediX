@@ -92,6 +92,12 @@ export async function getChatMessages(sessionId: string, accessToken?: string): 
   return messages.map(toMessage);
 }
 
+export async function deleteChatSession(sessionId: string, accessToken?: string): Promise<void> {
+  await request<void>(`/ai-assistant/sessions/${encodeURIComponent(sessionId)}`, accessToken, {
+    method: 'DELETE',
+  });
+}
+
 export async function postChatMessage(
   sessionId: string,
   text: string,
