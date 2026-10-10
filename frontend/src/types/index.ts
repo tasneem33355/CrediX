@@ -167,6 +167,15 @@ export interface ChatMessage {
     description: string;
     descriptionEn: string;
   };
+  answerMode?: 'grounded' | 'general' | 'hybrid' | 'insufficient_evidence';
+  provenance?: 'retrieved' | 'ai_generated' | 'mixed' | 'unavailable';
+  disclaimer?: string | null;
+  segments?: {
+    text: string;
+    sourceType: 'retrieved' | 'ai_generated';
+    citationHandles: string[];
+    supportStatus: 'supported' | 'inference' | 'unsupported';
+  }[];
 }
 
 export interface ChatSession {

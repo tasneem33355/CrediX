@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLanguage } from '@/context/LanguageContext';
+import { useAuth } from '@/context/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -28,9 +29,17 @@ import {
   mockInitialChatMessages,
 } from '@/data/mockData';
 import { ChatMessage } from '@/types';
+import { isDemoMode } from '@/lib/config';
+import {
+  createChatSession,
+  getChatMessages,
+  getChatSessions,
+  postChatMessage,
+} from '@/lib/chat/api';
 
 export default function AIAssistantPage() {
   const { t, language, direction } = useLanguage();
+  const { session } = useAuth();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
   const [sessions, setSessions] = useState(mockChatSessions);
@@ -39,16 +48,126 @@ export default function AIAssistantPage() {
   const [inputQuestion, setInputQuestion] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+  // Auto is conservative; document-grounded remains the safe fallback.
+  const [assistantMode, setAssistantMode] = useState<'auto' | 'grounded' | 'general'>('auto');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const accessToken = session?.access_token;
+
+  // In live mode, replace the showcase data with the persisted FastAPI chat.
+  useEffect(() => {
+    if (isDemoMode || !accessToken) return;
+    let cancelled = false;
+
+    const loadLiveChat = async () => {
+      try {
+        const remoteSessions = await getChatSessions(accessToken);
+        if (cancelled) return;
+        if (remoteSessions.length === 0) {
+          const created = await createChatSession(
+            language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+            accessToken,
+          );
+          if (cancelled) return;
+          setSessions([created]);
+          setActiveSessionId(created.id);
+          setMessages([]);
+          return;
+        }
+        const firstSession = remoteSessions[0];
+        setSessions(remoteSessions);
+        setActiveSessionId(firstSession.id);
+        setMessages(await getChatMessages(firstSession.id, accessToken));
+      } catch (error) {
+        console.error('Could not load the live RAG chat.', error);
+      }
+    };
+
+    void loadLiveChat();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, language]);
+
+  useEffect(() => {
+    if (isDemoMode || !accessToken || !activeSessionId) return;
+    let cancelled = false;
+
+    const loadSessionMessages = async () => {
+      try {
+        const remoteMessages = await getChatMessages(activeSessionId, accessToken);
+        if (!cancelled) setMessages(remoteMessages);
+      } catch (error) {
+        console.error('Could not load the selected chat session.', error);
+      }
+    };
+
+    void loadSessionMessages();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, activeSessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  const handleLiveSend = async (q: string) => {
+    let sessionId = activeSessionId;
+    const userMsg: ChatMessage = {
+      id: `msg_${Date.now()}`,
+      sender: 'user',
+      text: q,
+      textEn: q,
+      timestamp: new Date().toLocaleTimeString(language === 'ar' ? 'ar-EG' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
+
+    setMessages((prev) => [...prev, userMsg]);
+    setIsTyping(true);
+    try {
+      if (!sessionId) {
+        const created = await createChatSession(
+          language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+          accessToken,
+        );
+        sessionId = created.id;
+        setSessions((prev) => [created, ...prev]);
+        setActiveSessionId(created.id);
+      }
+
+      const responseMessages = await postChatMessage(sessionId, q, accessToken, assistantMode);
+      const assistantMessage = responseMessages.find((message) => message.sender === 'assistant');
+      if (assistantMessage) setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Live RAG request failed.', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_error_${Date.now()}`,
+          sender: 'assistant',
+          text: 'تعذر تشغيل مساعد المستندات حالياً. يرجى المحاولة مرة أخرى.',
+          textEn: 'The document assistant is temporarily unavailable. Please try again.',
+          timestamp: language === 'ar' ? 'الآن' : 'Now',
+        },
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
   const handleSend = (textToSend?: string) => {
     const q = textToSend || inputQuestion;
     if (!q.trim()) return;
+
+    if (!isDemoMode) {
+      setInputQuestion('');
+      void handleLiveSend(q.trim());
+      return;
+    }
 
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
@@ -69,7 +188,21 @@ export default function AIAssistantPage() {
     setTimeout(() => {
       let botResponse: ChatMessage;
 
-      if (q.includes('متناقضات') || q.includes('discrepancies')) {
+      if (assistantMode === 'general') {
+        botResponse = {
+          id: `msg_bot_${Date.now()}`,
+          sender: 'assistant',
+          text: 'ده شرح عام مولّد بالذكاء الاصطناعي وليس من مستندات CrediX.',
+          textEn: 'This is a general AI-generated explanation, not an answer retrieved from CrediX documents.',
+          timestamp: 'الآن',
+          citations: [],
+          answerMode: 'general',
+          provenance: 'ai_generated',
+          disclaimer: language === 'ar'
+            ? 'إجابة مولّدة بالذكاء الاصطناعي وليست من المستندات.'
+            : 'AI-generated answer; not retrieved from CrediX documents.',
+        };
+      } else if (q.includes('متناقضات') || q.includes('discrepancies')) {
         botResponse = {
           id: `msg_bot_${Date.now()}`,
           sender: 'assistant',
@@ -191,6 +324,17 @@ export default function AIAssistantPage() {
                 size="sm"
                 className="w-full shrink-0 mt-1"
                 onClick={() => {
+                  if (!isDemoMode) {
+                    void createChatSession(
+                      language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+                      accessToken,
+                    ).then((created) => {
+                      setSessions((prev) => [created, ...prev]);
+                      setActiveSessionId(created.id);
+                      setMessages([]);
+                    });
+                    return;
+                  }
                   const newId = `sess_${Date.now()}`;
                   setSessions([
                     {
@@ -247,6 +391,45 @@ export default function AIAssistantPage() {
                   <p className="text-[11px] text-text-muted">{t('ai.assistantSubtitle')}</p>
                 </div>
               </div>
+              <div
+                className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-semibold"
+                role="group"
+                aria-label={language === 'ar' ? 'طريقة إجابة المساعد' : 'Assistant answer mode'}
+                data-testid="assistant-mode-switch"
+              >
+                <span className="text-text-muted whitespace-nowrap">
+                  {language === 'ar' ? 'طريقة الإجابة:' : 'Answer mode:'}
+                </span>
+                <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+                <button
+                  type="button"
+                  onClick={() => setAssistantMode('auto')}
+                  className={clsx('rounded-md px-2 py-1 transition-colors', assistantMode === 'auto' ? 'bg-brand-navy text-white' : 'text-text-secondary hover:text-brand-navy')}
+                  aria-pressed={assistantMode === 'auto'}
+                  title={language === 'ar' ? 'يفصل تلقائيًا بين المستندات وGeneral وHybrid' : 'Automatically routes between documents, general, and hybrid'}
+                >
+                  {language === 'ar' ? 'تلقائي (مفضل)' : 'Auto (recommended)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAssistantMode('grounded')}
+                  className={clsx('rounded-md px-2 py-1 transition-colors', assistantMode === 'grounded' ? 'bg-brand-navy text-white' : 'text-text-secondary hover:text-brand-navy')}
+                  aria-pressed={assistantMode === 'grounded'}
+                  title={language === 'ar' ? 'الإجابة من مستندات CrediX فقط' : 'Answer from CrediX documents only'}
+                >
+                  {language === 'ar' ? 'المستندات' : 'Documents'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAssistantMode('general')}
+                  className={clsx('rounded-md px-2 py-1 transition-colors', assistantMode === 'general' ? 'bg-amber-600 text-white' : 'text-text-secondary hover:text-amber-700')}
+                  aria-pressed={assistantMode === 'general'}
+                  title={language === 'ar' ? 'إجابة AI عامة بدون استخدام مستندات CrediX' : 'General AI answer without CrediX document retrieval'}
+                >
+                  {language === 'ar' ? 'عام AI' : 'General AI'}
+                </button>
+                </div>
+              </div>
             </div>
 
             {/* Chat Messages Stream */}
@@ -277,11 +460,40 @@ export default function AIAssistantPage() {
                             : 'bg-surface-subtle text-text-primary border border-border'
                         }`}
                       >
-                        <p>{language === 'ar' ? msg.text : msg.textEn || msg.text}</p>
+                        {msg.segments && msg.segments.length > 0 ? (
+                          <div className="space-y-2">
+                            {msg.segments.map((segment, index) => (
+                              <div key={`${msg.id}-segment-${index}`}>
+                                <p>{segment.text}</p>
+                                <span className={clsx(
+                                  'mt-1 inline-block text-[10px] font-semibold',
+                                  segment.sourceType === 'ai_generated' ? 'text-amber-700' : 'text-brand-navy',
+                                )}>
+                                  {segment.supportStatus === 'unsupported'
+                                    ? (language === 'ar' ? 'لا يوجد دليل كافٍ' : 'Insufficient evidence')
+                                    : segment.sourceType === 'ai_generated'
+                                    ? (language === 'ar' ? 'شرح مولّد بالذكاء الاصطناعي' : 'AI-generated explanation')
+                                    : (language === 'ar' ? 'من المستندات' : 'From documents')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p>{language === 'ar' ? msg.text : msg.textEn || msg.text}</p>
+                        )}
                       </div>
 
+                      {/* Every general answer is visibly separated from document evidence. */}
+                      {!isUser && msg.provenance === 'ai_generated' && (
+                        <div className="pt-1 text-[11px] text-amber-700" data-testid="ai-generated-badge">
+                          {language === 'ar'
+                            ? (msg.disclaimer || 'إجابة مولّدة بالذكاء الاصطناعي وليست من المستندات.')
+                            : (msg.disclaimer || 'AI-generated answer; not retrieved from CrediX documents.')}
+                        </div>
+                      )}
+
                       {/* Document Citations Pills */}
-                      {!isUser && msg.citations && msg.citations.length > 0 && (
+                      {!isUser && msg.provenance !== 'ai_generated' && msg.citations && msg.citations.length > 0 && (
                         <div className="space-y-1.5 pt-1">
                           {msg.citations.map((c, i) => (
                             <div

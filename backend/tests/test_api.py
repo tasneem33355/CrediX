@@ -359,7 +359,14 @@ def test_ai_assistant_chat():
     assert len(history) == 2  # [user_msg, bot_msg]
     assert history[0]["sender"] == "user"
     assert history[1]["sender"] == "assistant"
-    assert len(history[1]["citations"]) > 0
+    assistant = history[1]
+    assert assistant["answerMode"] in {"grounded", "general", "hybrid", "insufficient_evidence"}
+    if assistant["answerMode"] in {"grounded", "hybrid"}:
+        assert len(assistant["citations"]) > 0
+    else:
+        # Auto must not invent evidence when the selected corpus cannot
+        # support the question (and General must remain citation-free).
+        assert assistant["citations"] == []
 
 
 def test_dashboard_analytics():

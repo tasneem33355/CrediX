@@ -1,13 +1,13 @@
-"""CRUD operations for AI Assistant Chat Sessions and Messages.
+"""CRUD operations for AI Assistant Chat Sessions and Messages."""
 
-The generated assistant response is DEMO ONLY, not a real RAG/LLM result.
-"""
-
+import logging
 import random
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models.chat import ChatSession, ChatMessage
 from app.schemas.chat import ChatSessionCreate, ChatMessageCreate
+
+logger = logging.getLogger(__name__)
 
 
 def get_chat_sessions(db: Session) -> List[ChatSession]:
@@ -53,7 +53,11 @@ def add_chat_message_and_respond(
     session_id: str,
     message_in: ChatMessageCreate,
 ) -> Tuple[ChatMessage, ChatMessage]:
-    """Adds user message and generates a realistic placeholder AI response with citations."""
+    """Persist a chat answer using explicit grounded/general/hybrid routing.
+
+    Auto is conservative and falls back to grounded for ambiguous queries;
+    general mode is explicit (or selected only by a clear general intent).
+    """
     user_msg_id = f"msg_user_{random.randint(1000, 9999)}"
     user_msg = ChatMessage(
         id=user_msg_id,
@@ -66,35 +70,71 @@ def add_chat_message_and_respond(
     )
     db.add(user_msg)
 
-    # Generate placeholder AI Assistant response
-    q = message_in.text.lower()
-    if "متناقض" in q or "discrepanc" in q or "احتيال" in q or "fraud" in q:
-        bot_text = "تم رصد تناقض بين شهادة الدخل (المعلن: 85,000 ج.م) وكشف الحساب البنكي الصادر من البنك الأهلي المصري (المتوسط الفعلي: 53,700 ج.م شهرياً)."
-        bot_text_en = "Discrepancy identified between declared income (85,000 EGP) and actual bank statement deposits (53,700 EGP/month)."
-        citations = [
-            {"documentName": "كشف حساب بنكي - صفحة 3", "documentNameEn": "Bank Statement - Page 3", "page": 3, "quote": "متوسط التدفق الشهري الدائن: 53,700 ج.م"},
-            {"documentName": "شهادة الدخل", "documentNameEn": "Income Certificate", "page": 1, "quote": "الدخل الصافي المعلن: 85,000 ج.م"}
-        ]
-        suggested_action = {
-            "label": "إجراء مقترح",
-            "labelEn": "Suggested Action",
-            "description": "طلب كشف حساب بنكي لـ 6 أشهر إضافية أو إقرار ضريبي موثق.",
-            "descriptionEn": "Request an additional 6-month bank statement or certified tax return."
-        }
-    elif "إيداع" in q or "deposit" in q or "رصيد" in q or "balance" in q:
-        bot_text = "إجمالي الإيداعات خلال آخر 3 شهور هو 485,200 ج.م، بمتوسط شهري قدره 161,733 ج.م ومتوسط رصيد ختامي 126,450 ج.م."
-        bot_text_en = "Total deposits over the last 3 months amount to 485,200 EGP, with a monthly average of 161,733 EGP and average balance of 126,450 EGP."
-        citations = [
-            {"documentName": "كشف الحساب البنكي", "documentNameEn": "Bank Statement", "page": 2, "quote": "إجمالي الإيداعات: 485,200 ج.م - صفحة 2"}
-        ]
-        suggested_action = None
-    else:
-        bot_text = "بناءً على وثائق الطلب المفحوصة، فإن درجة الجدارة الائتمانية تبلغ 78/100 ونسبة عبء الدين DBR تتوافق مع معايير البنك المركزي المصري."
-        bot_text_en = "Based on analyzed application documents, creditworthiness score is 78/100 and DTI complies with Central Bank of Egypt regulations."
-        citations = [
-            {"documentName": "تقرير الاستعلام الائتماني i-Score", "documentNameEn": "i-Score Credit Report", "page": 1, "quote": "السجل الائتماني منتظم وبدون تعثر"}
-        ]
-        suggested_action = None
+    segments = []
+    try:
+        if message_in.mode == "auto":
+            from app.services.rag_assistant import answer_auto_query, answer_citations
+
+            routed_answer = answer_auto_query(message_in.text)
+            bot_text = routed_answer.answer
+            bot_text_en = routed_answer.answer
+            citations = answer_citations(routed_answer) if routed_answer.answer_mode in {"grounded", "hybrid"} else []
+            answer_mode = routed_answer.answer_mode
+            provenance = routed_answer.provenance
+            disclaimer = routed_answer.disclaimer
+            segments = [
+                {
+                    "text": segment.text,
+                    "sourceType": segment.source_type,
+                    "citationHandles": list(segment.citation_handles),
+                    "supportStatus": segment.support_status,
+                }
+                for segment in routed_answer.segments
+            ]
+        elif message_in.mode == "general":
+            from app.services.rag_assistant import answer_general_query
+
+            general_answer = answer_general_query(message_in.text)
+            bot_text = general_answer.answer
+            bot_text_en = general_answer.answer
+            citations = []
+            answer_mode = general_answer.answer_mode
+            provenance = general_answer.provenance
+            disclaimer = general_answer.disclaimer
+        elif message_in.mode == "grounded":
+            from app.services.rag_assistant import answer_citations
+            from app.services.rag_assistant import answer_query
+
+            rag_answer = answer_query(message_in.text)
+            bot_text = rag_answer.answer
+            bot_text_en = rag_answer.answer
+            citations = answer_citations(rag_answer)
+            answer_mode = "insufficient_evidence" if rag_answer.no_answer else "grounded"
+            provenance = "retrieved"
+            disclaimer = None
+    except Exception:
+        # Keep the endpoint explicit about which isolated runtime failed; never
+        # turn a provider failure into a fabricated answer or a misleading
+        # document citation.
+        logger.exception("AI assistant answer failed for chat session %s", session_id)
+        failed_general = message_in.mode == "general"
+        if failed_general:
+            bot_text = "تعذر تشغيل المساعد العام حالياً. يرجى المحاولة مرة أخرى."
+            bot_text_en = "The general AI assistant is temporarily unavailable. Please try again."
+            answer_mode = "general"
+        elif message_in.mode == "auto":
+            bot_text = "Unable to safely classify or answer this question right now. No unsupported claim was generated."
+            bot_text_en = "The assistant could not safely classify or answer this question. No unsupported claim was generated."
+            answer_mode = "insufficient_evidence"
+        else:
+            bot_text = "تعذر تشغيل مساعد المستندات حالياً. يرجى التأكد من إعداد خدمة RAG ثم المحاولة مرة أخرى."
+            bot_text_en = "The document assistant is temporarily unavailable. Check the RAG runtime configuration and try again."
+            answer_mode = "grounded"
+        citations = []
+        provenance = "unavailable"
+        disclaimer = None
+        segments = []
+    suggested_action = None
 
     bot_msg_id = f"msg_bot_{random.randint(1000, 9999)}"
     bot_msg = ChatMessage(
@@ -106,6 +146,10 @@ def add_chat_message_and_respond(
         timestamp="الآن",
         citations=citations,
         suggested_action=suggested_action,
+        answer_mode=answer_mode,
+        provenance=provenance,
+        disclaimer=disclaimer,
+        segments=segments,
     )
     db.add(bot_msg)
 

@@ -20,6 +20,7 @@ from app.schemas.case import CaseCardBase, CaseCardCreate, CaseCardUpdate, CaseC
 from app.schemas.chat import (
     ChatMessageCreate,
     ChatMessageResponse,
+    ChatAnswerSegment,
     ChatSessionCreate,
     ChatSessionResponse,
     ChatSessionWithMessagesResponse,
@@ -55,6 +56,7 @@ __all__ = [
     "CaseCardResponse",
     "ChatMessageCreate",
     "ChatMessageResponse",
+    "ChatAnswerSegment",
     "ChatSessionCreate",
     "ChatSessionResponse",
     "ChatSessionWithMessagesResponse",
