@@ -31,6 +31,9 @@ def create_user(db: Session, user_in: UserCreate) -> User:
         name_en=user_in.name_en,
         email=user_in.email,
         role=user_in.role,
+        officer_tier=user_in.officer_tier,
+        approval_limit_egp=user_in.approval_limit_egp,
+        can_override_policy=user_in.can_override_policy or False,
         avatar=user_in.avatar,
         title=user_in.title,
         title_en=user_in.title_en,
@@ -39,3 +42,13 @@ def create_user(db: Session, user_in: UserCreate) -> User:
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+def update_user_permissions(db: Session, user: User, update_data: dict) -> User:
+    for field, value in update_data.items():
+        if value is not None and hasattr(user, field):
+            setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+

@@ -85,3 +85,13 @@ def require_role(*allowed_roles: str) -> Callable[..., User]:
         return current_user
 
     return role_dependency
+
+
+# Reusable role guards. Authorization is always the operational DB role
+# (users.role), never a role claim coming from the token or the request.
+require_officer = require_role("officer")
+require_authenticated_user = require_role("officer", "client")
+
+
+def is_officer(user: User) -> bool:
+    return user.role == "officer"

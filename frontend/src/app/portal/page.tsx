@@ -24,10 +24,12 @@ import { Button } from '@/components/ui/Button';
 import { CredixLogo } from '@/components/ui/CredixLogo';
 import { RequireRole } from '@/components/auth/RequireRole';
 import { mockApplications } from '@/data/mockData';
+import { fetchApplicationsList } from '@/lib/api';
+import { isDemoMode } from '@/lib/config';
 
 export default function ClientPortalPage() {
   const { t, language, formatCurrency, toggleLanguage, direction } = useLanguage();
-  const { logout } = useAuth();
+  const { logout, session } = useAuth();
   const router = useRouter();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
@@ -36,45 +38,130 @@ export default function ClientPortalPage() {
     router.push('/auth/login');
   };
 
-  const myApp = mockApplications[0]; // Ahmed Fouad application
+  const [appData, setAppData] = React.useState<any>(isDemoMode ? mockApplications[0] : null);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (isDemoMode) {
+      setIsLoading(false);
+      return;
+    }
+    if (!session?.access_token) return;
+    let isMounted = true;
+    async function loadClientApp() {
+      try {
+        // The backend returns only this client's own applications, newest first.
+        const apps = await fetchApplicationsList({ limit: 1 }, session?.access_token);
+        if (isMounted && Array.isArray(apps) && apps.length > 0) {
+          const raw = apps[0] as any;
+          setAppData({
+            id: raw.id,
+            applicantName: raw.applicant_name ?? raw.applicantName ?? '',
+            applicantNameEn: raw.applicant_name_en ?? raw.applicantNameEn ?? raw.applicant_name ?? '',
+            requestedAmount: Number(raw.requested_amount ?? raw.requestedAmount ?? 0),
+            loanTypeLabel: raw.loan_type_label ?? raw.loanTypeLabel ?? '',
+            loanTypeLabelEn: raw.loan_type_label_en ?? raw.loanTypeLabelEn ?? '',
+            status: raw.status ?? 'under_review',
+            tenureMonths: raw.tenure_months ?? raw.tenureMonths ?? 36,
+            documents: raw.documents ?? [],
+          });
+        } else if (isMounted) {
+          setAppData(null);
+        }
+      } catch {
+        if (isMounted) setAppData(null);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    void loadClientApp();
+    return () => {
+      isMounted = false;
+    };
+  }, [session]);
+
+  const myApp = appData ?? {
+    id: '', status: 'under_review', tenureMonths: 36, requestedAmount: 0, documents: [],
+    applicantName: '', applicantNameEn: '', loanTypeLabel: '', loanTypeLabelEn: '',
+  };
+  const isApproved = myApp.status === 'approved';
+  const isRejected = myApp.status === 'rejected';
+
+  // Calculate monthly installment estimate
+  const tenure = Number(myApp.tenureMonths) || 36;
+  const monthlyEst = Math.round((Number(myApp.requestedAmount) / tenure) * 1.18);
 
   const trackingSteps = [
     {
       id: 1,
       title: t('portal.step1'),
       status: 'completed',
-      date: '04 سبتمبر 2026 - 09:42 ص',
-      desc: language === 'ar' ? 'تم استلام كافة بيانات التمويل وملفاتك بنجاح' : 'Application data & documents received successfully',
+      date: language === 'ar' ? 'تم الاعتماد والاستلام' : 'Received & Logged',
+      desc: language === 'ar' ? 'تم استلام كافة بيانات التمويل ومستنداتك بنجاح' : 'Application data & documents received successfully',
     },
     {
       id: 2,
       title: t('portal.step2'),
       status: 'completed',
-      date: '04 سبتمبر 2026 - 09:43 ص',
-      desc: language === 'ar' ? 'تم استخراج البيانات الرقمية بدقة 97.4% ومطابقتها' : 'Digital data extracted with 97.4% OCR accuracy',
+      date: language === 'ar' ? 'مكتمل' : 'Completed',
+      desc: language === 'ar' ? 'تم استخراج البيانات الرقمية وفحص جودة المستندات آلياً' : 'Digital data extracted and document quality verified',
     },
     {
       id: 3,
       title: t('portal.step3'),
       status: 'completed',
-      date: '04 سبتمبر 2026 - 09:45 ص',
-      desc: language === 'ar' ? 'اكتملت مرحلة التقييم الآلي لحساب الجدارة وسجل الدفع' : 'Automated creditworthiness assessment complete',
+      date: language === 'ar' ? 'مكتمل' : 'Completed',
+      desc: language === 'ar' ? 'اكتملت مرحلة التقييم الآلي لاحتساب الملاءة المالية' : 'Automated creditworthiness assessment complete',
     },
     {
       id: 4,
       title: t('portal.step4'),
-      status: 'current',
-      date: language === 'ar' ? 'قيد التنفيذ الآن' : 'In Progress',
-      desc: language === 'ar' ? 'يقوم فريق الائتمان حالياً بمراجعة أوراق التمويل لإصدار القرار' : 'Credit team is currently reviewing documents to issue decision',
+      status: (isApproved || isRejected) ? 'completed' : 'current',
+      date: (isApproved || isRejected) ? (language === 'ar' ? 'اكتملت المراجعة' : 'Review completed') : (language === 'ar' ? 'قيد التنفيذ الآن' : 'In Progress'),
+      desc: isApproved
+        ? (language === 'ar' ? 'تمت مراجعة الطلب بنجاح من مسؤولي الائتمان' : 'Credit review completed successfully')
+        : isRejected
+        ? (language === 'ar' ? 'تم الانتهاء من المراجعة الائتمانية' : 'Credit assessment finished')
+        : (language === 'ar' ? 'يقوم فريق الائتمان حالياً بفحص ومراجعة أوراق التمويل' : 'Credit team is currently reviewing documents'),
     },
     {
       id: 5,
       title: t('portal.step5'),
-      status: 'pending',
-      date: language === 'ar' ? 'الخطوة القادمة' : 'Next Step',
-      desc: language === 'ar' ? 'سيتم إشعارك فور اعتماد التمويل لتوقيع العقود البنكية واستلام المبلغ' : 'You will be notified once approved to sign banking contracts',
+      status: isApproved ? 'completed' : isRejected ? 'failed' : 'pending',
+      date: isApproved ? (language === 'ar' ? 'تم الاعتماد بنجاح' : 'Approved') : isRejected ? (language === 'ar' ? 'طلب مرفوض' : 'Declined') : (language === 'ar' ? 'الخطوة القادمة' : 'Next Step'),
+      desc: isApproved
+        ? (language === 'ar' ? 'تهانينا! تم اعتماد التمويل، برجاء التوجه للفرع لتوقيع العقود واستلام المبلغ' : 'Congratulations! Your loan is approved. Visit branch for contract signing.')
+        : isRejected
+        ? (language === 'ar' ? 'نعتذر، لم يستوفِ الطلب الشروط الائتمانية المطلوبة حالياً' : 'We regret to inform that the application did not meet criteria.')
+        : (language === 'ar' ? 'سيتم إشعارك فور إصدار القرار النهائي لاستكمال إجراءات التعاقد' : 'You will be notified once decision is finalized'),
     },
   ];
+
+  if (isLoading || !appData) {
+    return (
+      <RequireRole allowedRole="client">
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background text-text-primary text-sm p-6 text-center">
+          {isLoading ? (
+            <p>{language === 'ar' ? 'جاري تحميل طلبك...' : 'Loading your application...'}</p>
+          ) : (
+            <>
+              <p>{language === 'ar' ? 'لا يوجد طلب تمويل مسجّل بعد.' : 'You have no financing application yet.'}</p>
+              <button
+                type="button"
+                onClick={() => router.push('/apply')}
+                className="px-5 py-2.5 rounded-xl bg-brand-navy text-white text-xs font-bold cursor-pointer"
+              >
+                {language === 'ar' ? 'قدّم طلب تمويل' : 'Apply for financing'}
+              </button>
+              <button type="button" onClick={handleLogout} className="text-xs text-text-muted underline cursor-pointer">
+                {language === 'ar' ? 'تسجيل الخروج' : 'Log out'}
+              </button>
+            </>
+          )}
+        </div>
+      </RequireRole>
+    );
+  }
 
   return (
     <RequireRole allowedRole="client">
@@ -233,12 +320,12 @@ export default function ClientPortalPage() {
 
                 <div className="flex justify-between py-1.5 border-b border-border">
                   <span className="text-text-muted">{language === 'ar' ? 'فترة السداد' : 'Tenure'}:</span>
-                  <span className="font-bold text-text-primary">36 {t('unit.months')}</span>
+                  <span className="font-bold text-text-primary">{tenure} {t('unit.months')}</span>
                 </div>
 
                 <div className="flex justify-between py-1.5">
                   <span className="text-text-muted">{t('portal.monthlyInstallment')}:</span>
-                  <span className="font-bold text-text-primary">~ 41,200 {t('currency.egp')}</span>
+                  <span className="font-bold text-brand-navy">~ {formatCurrency(monthlyEst)}</span>
                 </div>
               </div>
             </Card>
@@ -247,11 +334,13 @@ export default function ClientPortalPage() {
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <h3 className="text-sm font-bold text-text-primary">{t('portal.myDocuments')}</h3>
-                <span className="text-xs text-text-muted">4 مستندات</span>
+                <span className="text-xs text-text-muted">
+                  {(myApp.documents || []).length} {language === 'ar' ? 'مستندات' : 'documents'}
+                </span>               
               </div>
 
               <div className="space-y-2.5 text-xs">
-                {myApp.documents.map((doc) => (
+                {(myApp.documents || []).map((doc: any) => (
                   <div
                     key={doc.id}
                     className="flex items-center justify-between p-3 rounded-xl bg-surface-subtle border border-border"

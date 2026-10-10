@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Briefcase,
@@ -24,12 +24,26 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { mockCaseCards } from '@/data/mockData';
+import { useAuth } from '@/context/AuthContext';
+import { fetchCases, createCase, moveCase as moveCaseApi } from '@/lib/api';
 import { CaseCard } from '@/types';
 
 export default function CaseManagementPage() {
   const { t, language, formatCurrency } = useLanguage();
-  const [cases, setCases] = useState<CaseCard[]>(mockCaseCards);
+  const { session } = useAuth();
+  const token = session?.access_token;
+  const [cases, setCases] = useState<CaseCard[]>([]);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setLoadError(false);
+    fetchCases(token)
+      .then((data) => { if (!cancelled) setCases(data); })
+      .catch(() => { if (!cancelled) setLoadError(true); });
+    return () => { cancelled = true; };
+  }, [token]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [newAmount, setNewAmount] = useState('');
@@ -69,6 +83,12 @@ export default function CaseManagementPage() {
           bg: 'bg-[#FEE2E2] text-[#991B1B] border-[#F87171]',
           icon: <AlertTriangle className="w-3 h-3 text-[#DC2626] shrink-0" />,
         };
+      case 'تم الرفض':
+      case 'Rejected':
+        return {
+          bg: 'bg-[#FEE2E2] text-[#991B1B] border-[#F87171]',
+          icon: <AlertTriangle className="w-3 h-3 text-[#DC2626] shrink-0" />,
+        };        
       case 'تم الاعتماد':
       case 'Approved':
         return {
@@ -112,38 +132,55 @@ export default function CaseManagementPage() {
     return nameAr.trim().slice(0, 1) || 'ع';
   };
 
-  const handleCreateCase = (e: React.FormEvent) => {
+  const handleCreateCase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClientName || !newAmount) return;
+    if (!newClientName || !newAmount || !token) return;
 
-    const newCase: CaseCard = {
-      id: `case_${Date.now()}`,
-      applicationId: `APP-2026-0${Math.floor(Math.random() * 800 + 100)}`,
-      clientName: newClientName,
-      clientNameEn: newClientName,
-      initials: newClientName.trim().slice(0, 1) || 'ع',
-      amount: parseFloat(newAmount) || 100000,
-      currency: 'ج.م',
-      stageTag: newStage,
-      stageTagEn: newStage,
-      columnId: 'processing',
+    const stageEn: Record<string, string> = {
+      'استخراج البيانات': 'Data Extraction',
+      'تقييم المستندات': 'Document Evaluation',
+      'إشارة احتيال': 'Fraud Flag',
     };
 
-    setCases((prev) => [newCase, ...prev]);
-    setIsCreateModalOpen(false);
-    setNewClientName('');
-    setNewAmount('');
+    try {
+      const created = await createCase(
+        {
+          clientName: newClientName,
+          amount: parseFloat(newAmount),
+          stageTag: newStage,
+          stageTagEn: stageEn[newStage] || newStage,
+        },
+        token
+      );
+      setCases((prev) => [created, ...prev]);
+      setIsCreateModalOpen(false);
+      setNewClientName('');
+      setNewAmount('');
+    } catch {
+      setLoadError(true);
+    }
   };
 
-  const moveCase = (caseId: string, targetCol: 'processing' | 'human_review' | 'completed') => {
-    setCases((prev) =>
-      prev.map((c) => (c.id === caseId ? { ...c, columnId: targetCol } : c))
-    );
+  const moveCase = async (caseId: string, targetCol: 'processing' | 'human_review' | 'completed') => {
+    if (!token) return;
+    const previous = cases;
+    setCases((prev) => prev.map((c) => (c.id === caseId ? { ...c, columnId: targetCol } : c)));
+    try {
+      await moveCaseApi(caseId, targetCol, token);
+    } catch {
+      setCases(previous);
+      setLoadError(true);
+    }
   };
 
   return (
     <AppLayout breadcrumbTitle={t('nav.caseManagement')}>
       <div className="space-y-6">
+        {loadError && (
+          <div className="p-3 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-xs">
+            {language === 'ar' ? 'تعذر الاتصال بالخادم. أعيدي تحميل الصفحة.' : 'Could not reach the server. Please reload the page.'}
+          </div>
+        )}        
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -242,19 +279,19 @@ export default function CaseManagementPage() {
                             </div>
                             <div>
                               <Link
-                                href={`/applications/${c.applicationId}`}
+                                href={c.applicationId.startsWith('orphan_') ? '#' : `/applications/${c.applicationId}`}
                                 className="text-xs font-bold text-text-primary hover:text-brand-navy transition-colors block"
                               >
                                 {language === 'ar' ? c.clientName : c.clientNameEn}
                               </Link>
                               <span className="text-[10px] text-text-muted font-mono bg-surface-subtle px-1.5 py-0.2 rounded border border-border/60">
-                                {c.applicationId}
+                                {c.applicationId.startsWith('orphan_') ? '—' : c.applicationId}
                               </span>
                             </div>
                           </div>
 
                           <Link
-                            href={`/applications/${c.applicationId}`}
+                            href={c.applicationId.startsWith('orphan_') ? '#' : `/applications/${c.applicationId}`}
                             className="p-1 rounded-lg text-text-muted hover:text-brand-navy hover:bg-surface-subtle transition-colors cursor-pointer"
                             title={language === 'ar' ? 'عرض تفاصيل الطلب' : 'View Application Details'}
                           >

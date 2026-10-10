@@ -1,7 +1,7 @@
 """Aggregated API Router."""
 
 from fastapi import APIRouter
-from app.api.v1 import auth, applications, documents, fraud, cases, chat, dashboard
+from app.api.v1 import auth, applications, documents, fraud, cases, chat, dashboard, ocr, portfolio
 
 api_router = APIRouter()
 
@@ -12,4 +12,5 @@ api_router.include_router(fraud.router)
 api_router.include_router(cases.router)
 api_router.include_router(chat.router)
 api_router.include_router(dashboard.router)
-
+api_router.include_router(ocr.router)
+api_router.include_router(portfolio.router)

@@ -1,5 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
-import type { UserRole } from '@/types';
+import type { User, UserRole } from '@/types';
 import { AuthApiError, getCredixProfile, provisionCredixClient } from '@/lib/auth/api';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -30,8 +30,9 @@ export async function signInWithCredixProfile(
 }
 
 export async function resolveCredixProfile(session: Session, expectedRole?: UserRole) {
+  let profile: User;
   try {
-    return await getCredixProfile(session.access_token);
+    profile = await getCredixProfile(session.access_token);
   } catch (error) {
     if (!(error instanceof AuthApiError) || error.code !== 'PROFILE_NOT_PROVISIONED') {
       throw error;
@@ -39,14 +40,36 @@ export async function resolveCredixProfile(session: Session, expectedRole?: User
 
     if (expectedRole === 'officer') {
       throw new SignInError(
-        'This account does not have an institution-controlled Credit Officer profile.',
+        'هذا الحساب غير مسجل كمسؤول ائتمان مصرح له من المؤسسة.',
         'OFFICER_PROFILE_REQUIRED',
       );
     }
 
     await provisionCredixClient(session.access_token);
-    return getCredixProfile(session.access_token);
+    profile = await getCredixProfile(session.access_token);
   }
+
+  // Strict Portal Segregation: prevent cross-portal login (Client vs Officer)
+  if (expectedRole && profile.role !== expectedRole) {
+    const supabase = getSupabaseBrowserClient();
+    await supabase.auth.signOut().catch(() => {});
+
+    if (expectedRole === 'client' && profile.role === 'officer') {
+      throw new SignInError(
+        'عفواً، هذا الحساب مخصص لمسؤول ائتمان ولا يمكن استخدامه عبر بوابة العملاء. يرجى التبديل إلى تبويب "موظف ائتمان".',
+        'PORTAL_MISMATCH_OFFICER_ON_CLIENT_PORTAL'
+      );
+    }
+
+    if (expectedRole === 'officer' && profile.role === 'client') {
+      throw new SignInError(
+        'عفواً، هذا الحساب مسجل كعميل مقترض ولا يملك صلاحيات موظف ائتمان. يرجى التبديل إلى تبويب "مقدم طلب تمويل".',
+        'PORTAL_MISMATCH_CLIENT_ON_OFFICER_PORTAL'
+      );
+    }
+  }
+
+  return profile;
 }
 
 function classifySignInError(message?: string): string | undefined {

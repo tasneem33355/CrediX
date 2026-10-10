@@ -7,13 +7,13 @@ import {
   LayoutDashboard,
   FileText,
   FileSearch,
-  CheckSquare,
   ShieldAlert,
   Bot,
   Briefcase,
   PanelLeftClose,
   PanelLeftOpen,
   X,
+  Users,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLanguage } from '@/context/LanguageContext';
@@ -36,7 +36,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t, direction, language } = useLanguage();
   const sidebarRef = useRef<HTMLElement>(null);
 
-  const navItems = [
+  const navItems: {
+    id: string;
+    label: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: number;
+  }[] = [
     {
       id: 'dashboard',
       label: t('nav.dashboard'),
@@ -55,18 +61,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       href: '/documents',
       icon: FileSearch,
     },
-    {
-      id: 'credit-assessment',
-      label: t('nav.creditAssessment'),
-      href: '/applications/APP-2026-0839',
-      icon: CheckSquare,
-    },
+    
     {
       id: 'fraud-detection',
       label: t('nav.fraudDetection'),
       href: '/fraud-detection',
       icon: ShieldAlert,
-      badge: 3,
     },
     {
       id: 'ai-assistant',
@@ -79,6 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: t('nav.caseManagement'),
       href: '/case-management',
       icon: Briefcase,
+    },
+    {
+      id: 'settings-users',
+      label: language === 'ar' ? 'إدارة الصلاحيات' : 'Team & Authority',
+      href: '/settings/users',
+      icon: Users,
     },
   ];
 

@@ -8,6 +8,7 @@ from app.schemas.application import (
     LoanApplicationResponse,
     LoanApplicationListResponse,
     OfficerDecisionRequest,
+    DecisionAuditResponse,
     ExtractedDataField,
     BankStatementSummary,
     CreditScoreFactor,
@@ -20,14 +21,17 @@ from app.schemas.case import CaseCardBase, CaseCardCreate, CaseCardUpdate, CaseC
 from app.schemas.chat import (
     ChatMessageCreate,
     ChatMessageResponse,
-    ChatAnswerSegment,
     ChatSessionCreate,
     ChatSessionResponse,
     ChatSessionWithMessagesResponse,
 )
 from app.schemas.dashboard import DashboardStats, TrendItem, StatusDonutItem, LoanTypeItem
+from app.schemas.ocr import OCRSubmissionRequest, OCRIngestResponse, FullPipelineScoreResponse
 
 __all__ = [
+    "OCRSubmissionRequest",
+    "OCRIngestResponse",
+    "FullPipelineScoreResponse",
     "UserBase",
     "UserCreate",
     "UserResponse",
@@ -38,6 +42,7 @@ __all__ = [
     "LoanApplicationResponse",
     "LoanApplicationListResponse",
     "OfficerDecisionRequest",
+    "DecisionAuditResponse",
     "ExtractedDataField",
     "BankStatementSummary",
     "CreditScoreFactor",
@@ -56,7 +61,6 @@ __all__ = [
     "CaseCardResponse",
     "ChatMessageCreate",
     "ChatMessageResponse",
-    "ChatAnswerSegment",
     "ChatSessionCreate",
     "ChatSessionResponse",
     "ChatSessionWithMessagesResponse",

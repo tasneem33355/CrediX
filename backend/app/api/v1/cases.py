@@ -3,11 +3,13 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from app.auth.dependencies import require_officer
 from app.database import get_db
 from app.crud.crud_case import get_case_by_id, get_cases, create_case, update_case, delete_case
 from app.schemas.case import CaseCardResponse, CaseCardCreate, CaseCardUpdate
 
-router = APIRouter(prefix="/cases", tags=["Case Management"])
+# Officer-only: every route on this router requires an authenticated credit officer.
+router = APIRouter(prefix="/cases", tags=["Case Management"], dependencies=[Depends(require_officer)])
 
 
 @router.get("", response_model=List[CaseCardResponse])

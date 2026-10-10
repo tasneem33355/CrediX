@@ -6,9 +6,14 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from app.config import settings
 from app.database import get_db
 from app.auth.claims import AuthClaims
-from app.auth.dependencies import get_auth_claims, get_current_user as get_authenticated_user
+from app.auth.dependencies import (
+    get_auth_claims,
+    get_current_user as get_authenticated_user,
+    require_officer,
+)
 from app.crud.crud_user import (
     create_user,
     get_user_by_email,
@@ -17,14 +22,19 @@ from app.crud.crud_user import (
     get_users,
 )
 from app.models.user import User
-from app.schemas.user import UserResponse, UserCreate, LoginRequest
+from app.schemas.user import UserResponse, UserCreate, LoginRequest, UserUpdatePermissions
 
 router = APIRouter(prefix="", tags=["Authentication & Users"])
 
 
 @router.post("/auth/login", response_model=UserResponse, deprecated=True)
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
-    """DEMO/LEGACY ONLY: return a demo profile; this does not authenticate users."""
+    """DEMO/LEGACY ONLY: return a demo profile; this does not authenticate users.
+
+    Disabled (404) unless ENABLE_LEGACY_LOGIN=true, and never allowed in production.
+    """
+    if not settings.ENABLE_LEGACY_LOGIN:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
     # If real email is provided (not empty and not the default Swagger placeholder 'string')
     if login_data.email and "@" in login_data.email and login_data.email != "string":
         user = get_user_by_email(db, login_data.email)
@@ -164,16 +174,72 @@ def provision_client_profile(
     return new_user
 
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users", response_model=List[UserResponse], dependencies=[Depends(require_officer)])
 def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """List registered users."""
+    """List registered users (credit officers only)."""
     return get_users(db, skip=skip, limit=limit)
 
 
-@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_officer)],
+)
 def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user."""
+    """Register a new user profile (credit officers only).
+
+    Public sign-up goes through Supabase + /auth/provision, which can only create clients.
+    """
     existing = get_user_by_email(db, user_in.email)
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     return create_user(db, user_in)
+
+
+@router.patch(
+    "/users/{user_id}/permissions",
+    response_model=UserResponse,
+)
+def modify_user_permissions(
+    user_id: str,
+    update_data: UserUpdatePermissions,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_officer),
+):
+    """Modify user role, officer delegation tier, and approval limits.
+    
+    Restricted strictly to Credit Risk Managers or Chief Risk Officers (CRO).
+    """
+    if getattr(current_user, "officer_tier", None) not in {"risk_manager", "cro"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "INSUFFICIENT_PRIVILEGE",
+                "message": "تعديل تفويضات وسقوف الائتمان مقصور على مديري المخاطر (Risk Managers) أو رئيس القطاع (CRO) فقط.",
+            },
+        )
+
+    target_user = get_user_by_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    payload = update_data.model_dump(exclude_unset=True)
+    # Default title and titles based on tier if changed
+    tier_titles = {
+        "junior_officer": ("مسؤول ائتمان مبتدئ", "Junior Credit Officer"),
+        "senior_officer": ("كبير مسؤولي الائتمان", "Senior Credit Officer"),
+        "risk_manager": ("مدير إدارة مخاطر الائتمان", "Credit Risk Manager"),
+        "cro": ("رئيس قطاع المخاطر والائتمان (CRO)", "Chief Risk Officer"),
+    }
+    if "officer_tier" in payload and payload["officer_tier"] in tier_titles:
+        ar_title, en_title = tier_titles[payload["officer_tier"]]
+        if "title" not in payload:
+            payload["title"] = ar_title
+        if "title_en" not in payload:
+            payload["title_en"] = en_title
+
+    from app.crud.crud_user import update_user_permissions
+    updated = update_user_permissions(db, target_user, payload)
+    return updated
+

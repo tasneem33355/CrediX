@@ -40,6 +40,8 @@ class ChatAnswerSegment(BaseModel):
 class ChatMessageCreate(BaseModel):
     text: str
     text_en: Optional[str] = Field(None, alias="textEn")
+    application_id: Optional[str] = Field(None, alias="applicationId")
+    lang: Optional[str] = None
     # Auto is the default conservative router; grounded/general remain explicit.
     mode: Literal["auto", "grounded", "general"] = "auto"
 

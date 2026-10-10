@@ -2,13 +2,14 @@ import React from 'react';
 import { clsx } from 'clsx';
 
 export interface ScoreGaugeProps {
-  score: number; // 0 to 100
+  score: number; // 0 to 100 or 300 to 850
   maxScore?: number;
   label?: string;
   sublabel?: string;
   size?: 'sm' | 'md' | 'lg';
   variant?: 'credit' | 'fraud';
   className?: string;
+  colorOverride?: string;
 }
 
 export const CircularScoreGauge: React.FC<ScoreGaugeProps> = ({
@@ -19,6 +20,7 @@ export const CircularScoreGauge: React.FC<ScoreGaugeProps> = ({
   size = 'md',
   variant = 'credit',
   className,
+  colorOverride,
 }) => {
   const normalized = Math.min(Math.max(score, 0), maxScore);
   const percentage = (normalized / maxScore) * 100;
@@ -31,16 +33,19 @@ export const CircularScoreGauge: React.FC<ScoreGaugeProps> = ({
   const svgSize = (radius + strokeWidth) * 2;
 
   // Determine stroke color
-  let strokeColor = '#2E9E5B'; // Success
-  if (variant === 'credit') {
-    if (score < 50) strokeColor = '#DC4C4C';
-    else if (score < 70) strokeColor = '#F59E0B';
-    else strokeColor = '#2E9E5B';
-  } else {
-    // Fraud
-    if (score >= 70) strokeColor = '#DC4C4C';
-    else if (score >= 40) strokeColor = '#F59E0B';
-    else strokeColor = '#2E9E5B';
+  let strokeColor = colorOverride || '#2E9E5B'; // Success
+  if (!colorOverride) {
+    const effectivePct = maxScore > 100 ? (normalized / maxScore) * 100 : normalized;
+    if (variant === 'credit') {
+      if (effectivePct < 60) strokeColor = '#DC4C4C';
+      else if (effectivePct < 80) strokeColor = '#F59E0B';
+      else strokeColor = '#2E9E5B';
+    } else {
+      // Fraud
+      if (score >= 70) strokeColor = '#DC4C4C';
+      else if (score >= 40) strokeColor = '#F59E0B';
+      else strokeColor = '#2E9E5B';
+    }
   }
 
   return (

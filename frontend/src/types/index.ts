@@ -1,6 +1,7 @@
 export type Language = 'ar' | 'en';
 
 export type UserRole = 'client' | 'officer';
+export type OfficerTier = 'junior_officer' | 'senior_officer' | 'risk_manager' | 'cro';
 
 export interface User {
   id: string;
@@ -11,6 +12,9 @@ export interface User {
   avatar?: string;
   title?: string;
   titleEn?: string;
+  officerTier?: OfficerTier;
+  approvalLimitEgp?: number;
+  canOverridePolicy?: boolean;
 }
 
 export type LoanType = 'personal' | 'sme' | 'auto' | 'mortgage';
@@ -109,6 +113,8 @@ export interface LoanApplication {
   date: string;
   lastUpdated: string;
   status: ApplicationStatus;
+  declaredMonthlyIncome?: number;
+  companyName?: string;
   
   // AI Assessment & Explainability
   aiRecommendation: 'approve' | 'manual_review' | 'reject';

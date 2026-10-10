@@ -1,25 +1,36 @@
 """CRUD operations for Documents."""
 
-import random
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from app.models.application import Document
+from app.models.application import Document, LoanApplication
 from app.schemas.document import DocumentCreate
+from app.database import new_id
 
 
 def get_document_by_id(db: Session, doc_id: str) -> Optional[Document]:
     return db.query(Document).filter(Document.id == doc_id).first()
 
 
-def get_documents(db: Session, application_id: Optional[str] = None, skip: int = 0, limit: int = 100) -> List[Document]:
+def get_documents(
+    db: Session,
+    application_id: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    applicant_id: Optional[str] = None,
+) -> List[Document]:
     query = db.query(Document)
+    if applicant_id is not None:
+        # Row-level scoping through the owning application.
+        query = query.join(LoanApplication, Document.application_id == LoanApplication.id).filter(
+            LoanApplication.applicant_id == applicant_id
+        )
     if application_id:
         query = query.filter(Document.application_id == application_id)
     return query.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
 
 
 def create_document(db: Session, doc_in: DocumentCreate) -> Document:
-    doc_id = doc_in.id or f"doc_{random.randint(1000, 9999)}"
+    doc_id = doc_in.id or new_id("doc")
     db_doc = Document(
         id=doc_id,
         application_id=doc_in.application_id,

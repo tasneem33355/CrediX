@@ -14,16 +14,55 @@ from app.models.chat import ChatSession, ChatMessage
 def seed_database(db: Session) -> None:
     """Seed the database with initial users, applications, cases, and chat history."""
     
-    # 1. Users
+    # 1. Users (Multi-Tier Credit Officers & Client)
     if db.query(User).count() == 0:
-        officer = User(
+        officer_junior = User(
+            id="usr_officer_junior",
+            name="أحمد هلال",
+            name_en="Ahmed Helal",
+            email="ahmed.helal@credix.bank.eg",
+            role="officer",
+            officer_tier="junior_officer",
+            approval_limit_egp=250000.0,
+            can_override_policy=False,
+            title="مسؤول ائتمان مبتدئ",
+            title_en="Junior Credit Officer",
+        )
+        officer_senior = User(
             id="usr_officer_01",
             name="محمد سامي",
             name_en="Mohamed Sami",
             email="mohamed.sami@credix.bank.eg",
             role="officer",
+            officer_tier="senior_officer",
+            approval_limit_egp=750000.0,
+            can_override_policy=False,
             title="كبير مسؤولي الائتمان",
             title_en="Senior Credit Officer",
+        )
+        officer_manager = User(
+            id="usr_officer_manager",
+            name="سارة الشناوي",
+            name_en="Sara El-Shennawy",
+            email="sara.shennawy@credix.bank.eg",
+            role="officer",
+            officer_tier="risk_manager",
+            approval_limit_egp=3000000.0,
+            can_override_policy=True,
+            title="مدير إدارة مخاطر الائتمان",
+            title_en="Credit Risk Manager",
+        )
+        officer_cro = User(
+            id="usr_cro",
+            name="د. طارق عبد العزيز",
+            name_en="Dr. Tarek Abdelaziz",
+            email="tarek.abdelaziz@credix.bank.eg",
+            role="officer",
+            officer_tier="cro",
+            approval_limit_egp=100000000.0,
+            can_override_policy=True,
+            title="رئيس قطاع المخاطر والائتمان (CRO)",
+            title_en="Chief Risk Officer",
         )
         client = User(
             id="usr_client_01",
@@ -34,13 +73,14 @@ def seed_database(db: Session) -> None:
             title="مقدم طلب تمويل",
             title_en="Financing Applicant",
         )
-        db.add_all([officer, client])
+        db.add_all([officer_junior, officer_senior, officer_manager, officer_cro, client])
         db.commit()
 
     # 2. Loan Applications & Documents & Timeline
     if db.query(LoanApplication).count() == 0:
         app1 = LoanApplication(
             id="APP-2026-0839",
+            applicant_id="usr_client_01",
             applicant_name="أحمد فؤاد عبد الله",
             applicant_name_en="Ahmed Fouad Abdallah",
             national_id="28501151001234",
@@ -405,6 +445,7 @@ def seed_database(db: Session) -> None:
     if db.query(ChatSession).count() == 0:
         sess1 = ChatSession(
             id="sess_1",
+            user_id="usr_officer_01",
             title="تحليل طلب أحمد فؤاد",
             title_en="Analysis for Ahmed Fouad",
             time_ago="منذ 12 دقيقة",
@@ -413,6 +454,7 @@ def seed_database(db: Session) -> None:
         )
         sess2 = ChatSession(
             id="sess_2",
+            user_id="usr_officer_01",
             title="ملخص طلبات اليوم",
             title_en="Today's Applications Summary",
             time_ago="أمس، 04:20 م",
@@ -421,6 +463,7 @@ def seed_database(db: Session) -> None:
         )
         sess3 = ChatSession(
             id="sess_3",
+            user_id="usr_officer_01",
             title="مؤشرات الاحتيال الشهرية",
             title_en="Monthly Fraud Indicators",
             time_ago="02 سبتمبر",

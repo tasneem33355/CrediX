@@ -23,8 +23,9 @@ FastAPI backend service powering the CrediX smart credit & financing analysis pl
 - **AI Copilot Assistant**: RAG document chat sessions with citations and action recommendations.
 - **Executive Analytics**: Real-time KPI summaries, 30-day volume trends, and loan type breakdowns.
 """,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
 # Explicit local origins are required because credentials are enabled.
@@ -40,6 +41,15 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
+@app.on_event("startup")
+def on_startup():
+    """Ensure database schema has recent column migrations and pgvector tables."""
+    from app.database import ensure_schema_compatibility, ensure_pgvector_schema
+    ensure_schema_compatibility()
+    ensure_pgvector_schema()
+
+
+
 @app.get("/", tags=["Health & Status"])
 def root():
     """Root health check endpoint."""
@@ -47,7 +57,7 @@ def root():
         "status": "online",
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
-        "docs_url": "/docs",
+        "docs_url": None if settings.is_production else "/docs",
         "api_v1": settings.API_V1_PREFIX,
     }
 

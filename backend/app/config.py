@@ -2,6 +2,7 @@
 
 import json
 from typing import List
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +21,42 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
     SUPABASE_URL: str = ""
     SUPABASE_JWT_AUDIENCE: str = "authenticated"
+
+    # DEMO/LEGACY ONLY. /auth/login returns a profile without authenticating anyone,
+    # so it is disabled unless explicitly enabled (local demos and the test-suite).
+    ENABLE_LEGACY_LOGIN: bool = False
+
+    # External ML & AI Services
+    OCR_SERVICE_URL: str = "https://document-ocr-service-production-93e9.up.railway.app"
+    CREDIT_RISK_SERVICE_URL: str = "https://credit-risk-ml-system-v1-production.up.railway.app"
+    LLM_EXPLAINER_SERVICE_URL: str = "https://llm-explainer-service-production.up.railway.app"
+    PORTFOLIO_ANALYTICS_SERVICE_URL: str = "https://portfolio-analytics-service-production.up.railway.app"
+    FRAUD_SERVICE_URL: str = "https://fraud-detection-service-v1-production.up.railway.app"
+
+    # Indicative pricing, used only to estimate the monthly annuity sent to scoring.
+    # Base = CBE overnight lending rate (20% at the 24 Sep 2026 MPC meeting).
+    BASE_INTEREST_RATE_PCT: float = 20.0
+    LOAN_MARGIN_PCT: float = 4.0
+
+    # Portfolio stress-test assumptions (adjustable without code changes).
+    STRESS_BASE_LGD: float = 0.45  # Basel foundation-IRB senior unsecured LGD
+    STRESS_PD_SENSITIVITY_PER_100BPS: float = 0.05  # relative PD increase per +100 bps
+    
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV.lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def _validate_production_safety(self) -> "Settings":
+        """Fail fast at startup instead of running an unsafe production instance."""
+        if self.is_production:
+            if not self.SUPABASE_URL:
+                raise ValueError("SUPABASE_URL is required when APP_ENV=production")
+            if self.ENABLE_LEGACY_LOGIN:
+                raise ValueError("ENABLE_LEGACY_LOGIN must be false when APP_ENV=production")
+            if self.DATABASE_URL.startswith("sqlite"):
+                raise ValueError("SQLite is not allowed when APP_ENV=production")
+        return self
 
     @property
     def supabase_issuer(self) -> str:

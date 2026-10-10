@@ -173,9 +173,32 @@ The Sign In selector cannot grant access: PostgreSQL role determines the route.
 Logout calls `supabase.auth.signOut()`, clears in-memory CrediX profile state,
 and returns to Sign In. Google OAuth and Forgot Password remain future tasks.
 
+## Authorization model
+
+Every business endpoint requires a verified Supabase Bearer token mapped to a
+CrediX profile. Access is decided by `users.role` in PostgreSQL only:
+
+| Resource | officer | client |
+| --- | --- | --- |
+| `GET /applications`, `GET /applications/{id}` | all | own applications only (others return 404) |
+| `POST /applications` | yes | yes (owner = caller; client-supplied `id` ignored) |
+| `PATCH` / `DELETE /applications/{id}`, `POST .../decision` | yes | no (403) |
+| `GET /documents`, `GET /documents/{id}` | all | documents of own applications |
+| `POST /documents` | yes | only for own applications |
+| `DELETE /documents/{id}` | yes | no |
+| `/fraud/*`, `/cases/*`, `/dashboard/*`, `/users` | yes | no |
+| `/ai-assistant/*` | own sessions | no |
+
+`POST /auth/login` is a DEMO/LEGACY route that does not authenticate anyone. It
+returns 404 unless `ENABLE_LEGACY_LOGIN=true` and can never be enabled when
+`APP_ENV=production`. With `APP_ENV=production` the API also refuses to start
+without `SUPABASE_URL` or with a SQLite `DATABASE_URL`, hides `/docs`, and
+`python -m app.seed` refuses to run.
+
 ## Frontend demo mode
 
-For a standalone submission or Vercel showcase, set only:
+Demo mode is opt-in (`NEXT_PUBLIC_DEMO_MODE=true`); the default is the real
+Supabase + FastAPI flow. For a standalone submission or Vercel showcase, set only:
 
 ```text
 NEXT_PUBLIC_DEMO_MODE=true
@@ -186,7 +209,7 @@ officer/client identities. It bypasses Supabase Auth, FastAPI, PostgreSQL, and
 Docker entirely, so `NEXT_PUBLIC_API_URL` and Supabase variables are not needed
 for the demo build.
 
-To resume real Supabase and FastAPI integration later, set:
+To use real Supabase and FastAPI integration, leave it unset or set:
 
 ```text
 NEXT_PUBLIC_DEMO_MODE=false

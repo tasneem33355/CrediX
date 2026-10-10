@@ -12,10 +12,15 @@ import {
   Home,
   Menu,
   LogOut,
+  Shield,
+  ShieldCheck,
+  Check,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAuth } from '@/context/AuthContext';
+import { isDemoMode } from '@/lib/config';
+import type { OfficerTier } from '@/types';
 import { Avatar } from '@/components/ui/Avatar';
 
 export interface TopHeaderProps {
@@ -34,7 +39,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   isSidebarCollapsed,
 }) => {
   const { language, toggleLanguage, t, direction } = useLanguage();
-  const { user, logout } = useAuth();
+  const { user, logout, switchOfficerTier } = useAuth();
   const router = useRouter();
   const Arrow = direction === 'rtl' ? ChevronLeft : ChevronRight;
 
@@ -274,15 +279,69 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 <p className="text-[11px] text-text-muted mt-0.5 font-mono truncate">
                   {user?.email || 'mohamed.sami@credix.demo'}
                 </p>
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap gap-1.5 items-center">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E8EEF5] text-brand-navy border border-border">
                     {userTitle}
                   </span>
+                  {user?.role === 'officer' && user.approvalLimitEgp !== undefined && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-semantic-success-subtle text-semantic-success border border-semantic-success/20">
+                      <Shield className="w-2.5 h-2.5" />
+                      {user.approvalLimitEgp >= 50000000
+                        ? (language === 'ar' ? 'سقف غير محدود (CRO)' : 'Unlimited (CRO)')
+                        : `${user.approvalLimitEgp.toLocaleString('ar-EG')} ج.م`}
+                    </span>
+                  )}
                 </div>
               </div>
 
+              {/* Officer Tier Quick Switcher for RBAC Delegation Testing */}
+              {isDemoMode && user?.role === 'officer' && (
+                <div className="p-2 border-b border-border bg-surface-subtle/50">
+                  <p className="text-[10px] font-bold text-text-muted px-2 mb-1.5">
+                    {language === 'ar' ? 'تبديل رتبة الصلاحية الائتمانية:' : 'Switch Credit Tier:'}
+                  </p>
+                  <div className="space-y-1">
+                    {[
+                      { tier: 'junior_officer' as OfficerTier, label: 'مسؤول مبتدئ (250 ألف)', labelEn: 'Junior (250K)' },
+                      { tier: 'senior_officer' as OfficerTier, label: 'كبير مسؤولي الائتمان (750 ألف)', labelEn: 'Senior (750K)' },
+                      { tier: 'risk_manager' as OfficerTier, label: 'مدير مخاطر (3 مليون + استثناء)', labelEn: 'Risk Manager (3M + Override)' },
+                      { tier: 'cro' as OfficerTier, label: 'رئيس قطاع المخاطر (غير محدود)', labelEn: 'CRO (Unlimited)' },
+                    ].map((item) => (
+                      <button
+                        key={item.tier}
+                        type="button"
+                        onClick={() => {
+                          if (switchOfficerTier) switchOfficerTier(item.tier);
+                          setIsProfileMenuOpen(false);
+                        }}
+                        className={clsx(
+                          'w-full flex items-center justify-between px-2.5 py-1 rounded-lg text-[11px] font-semibold text-start transition-colors',
+                          (user?.officerTier || 'senior_officer') === item.tier
+                            ? 'bg-brand-navy text-white font-bold'
+                            : 'hover:bg-surface text-text-secondary'
+                        )}
+                      >
+                        <span>{language === 'ar' ? item.label : item.labelEn}</span>
+                        {(user?.officerTier || 'senior_officer') === item.tier && <Check className="w-3 h-3 text-white" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
-              <div className="p-1.5 space-y-0.5">
+              <div className="p-1.5 space-y-0.5 border-t border-border">
+                {user?.role === 'officer' && (
+                  <Link
+                    href="/settings/users"
+                    onClick={() => setIsProfileMenuOpen(false)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-text-primary hover:bg-surface-subtle transition-colors duration-fast cursor-pointer"
+                    role="menuitem"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-brand-navy" />
+                    <span>{language === 'ar' ? 'إدارة الصلاحيات والفريق' : 'Team & Authority Matrix'}</span>
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={() => void handleSignOut()}

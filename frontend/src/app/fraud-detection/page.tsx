@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   ShieldAlert,
@@ -15,84 +15,33 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { mockApplications } from '@/data/mockData';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useAuth } from '@/context/AuthContext';
+import { fetchFraudCases, type FraudCase } from '@/lib/api';
 
 export default function FraudDetectionPage() {
   const { t, language, direction } = useLanguage();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
-  const fraudCases = [
-    {
-      id: 'APP-2026-0839',
-      clientName: 'أحمد فؤاد',
-      clientNameEn: 'Ahmed Fouad',
-      initial: 'أ',
-      type: 'تمويل مشروعات صغيرة',
-      typeEn: 'SME Financing',
-      severity: 'high',
-      severityLabel: 'مرتفع',
-      severityLabelEn: 'High',
-      confidence: 94,
-      mismatch: 'تناقض في البيانات المالية (الدخل المعلن vs كشف الحساب)',
-      mismatchEn: 'Financial Data Discrepancy (Declared vs Bank Statement)',
-    },
-    {
-      id: 'APP-2026-0832',
-      clientName: 'نورهان عادل',
-      clientNameEn: 'Nourhan Adel',
-      initial: 'ن',
-      type: 'تمويل سيارات',
-      typeEn: 'Auto Financing',
-      severity: 'medium',
-      severityLabel: 'متوسط',
-      severityLabelEn: 'Medium',
-      confidence: 78,
-      mismatch: 'تناقض في البيانات المالية وسجل الائتمان i-Score',
-      mismatchEn: 'Discrepancy in financial records and i-Score history',
-    },
-    {
-      id: 'APP-2026-0839-DUP',
-      clientName: 'أحمد فؤاد',
-      clientNameEn: 'Ahmed Fouad',
-      initial: 'أ',
-      type: 'تمويل مشروعات صغيرة',
-      typeEn: 'SME Financing',
-      severity: 'medium',
-      severityLabel: 'متوسط',
-      severityLabelEn: 'Medium',
-      confidence: 78,
-      mismatch: 'تطابق رقم هاتف وسجل تجاري مع طلب مرفوض سابقاً',
-      mismatchEn: 'Matched phone and registry number with previously rejected case',
-    },
-    {
-      id: 'APP-2026-0838',
-      clientName: 'مريم وائل',
-      clientNameEn: 'Maryam Wael',
-      initial: 'م',
-      type: 'تمويل عقاري',
-      typeEn: 'Mortgage Financing',
-      severity: 'medium',
-      severityLabel: 'متوسط',
-      severityLabelEn: 'Medium',
-      confidence: 78,
-      mismatch: 'تناقض في تقييم عقد الوحدة العقارية المرفقة',
-      mismatchEn: 'Valuation discrepancy in attached real estate contract',
-    },
-    {
-      id: 'APP-2026-0835',
-      clientName: 'يوسف خالد',
-      clientNameEn: 'Youssef Khaled',
-      initial: 'ي',
-      type: 'تمويل شخصي',
-      typeEn: 'Personal Financing',
-      severity: 'medium',
-      severityLabel: 'متوسط',
-      severityLabelEn: 'Medium',
-      confidence: 78,
-      mismatch: 'تحركات بنكية غير اعتيادية قبل تقديم الطلب مباشرة',
-      mismatchEn: 'Unusual rapid turnover spikes right before submission',
-    },
-  ];
+  const { session } = useAuth();
+  const token = session?.access_token;
+  const [fraudCases, setFraudCases] = useState<FraudCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(false);
+    fetchFraudCases(token)
+      .then((data) => { if (!cancelled) setFraudCases(data); })
+      .catch(() => { if (!cancelled) setLoadError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const highRiskCount = fraudCases.filter((c) => c.severity === 'high' || c.severity === 'critical').length;
 
   return (
     <AppLayout breadcrumbTitle={t('nav.fraudDetection')}>
@@ -113,21 +62,38 @@ export default function FraudDetectionPage() {
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-xs font-bold">
             <AlertTriangle className="w-4 h-4 text-semantic-error" />
             <span>
-              {t('risk.highRiskCasesBadge')} 3
+              {t('risk.highRiskCasesBadge')} {highRiskCount}
             </span>
           </div>
         </div>
 
         {/* Fraud Cases Cards Grid */}
+        {loading ? (
+          <p className="text-xs text-text-muted text-center py-12">
+            {language === 'ar' ? 'جاري التحميل...' : 'Loading...'}
+          </p>
+        ) : loadError ? (
+          <EmptyState
+            title={language === 'ar' ? 'تعذر تحميل الحالات' : 'Could not load cases'}
+            description={language === 'ar' ? 'حدث خطأ أثناء الاتصال بالخادم.' : 'An error occurred while contacting the server.'}
+            actionLabel={t('action.retry')}
+            onAction={() => window.location.reload()}
+          />
+        ) : fraudCases.length === 0 ? (
+          <EmptyState
+            title={language === 'ar' ? 'لا توجد حالات مشبوهة' : 'No suspicious cases'}
+            description={language === 'ar' ? 'لم يتم رصد أي طلب يحتاج مراجعة احتيال حالياً.' : 'No application currently needs a fraud review.'}
+          />
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {fraudCases.map((c, idx) => (
-            <Card key={idx} className="p-6 space-y-4 hover:border-border-strong transition-all flex flex-col justify-between">
+          {fraudCases.map((c) => (
+            <Card key={c.id} className="p-6 space-y-4 hover:border-border-strong transition-all flex flex-col justify-between">
               <div className="space-y-4">
                 {/* Card Top: Severity Badge and Menu */}
                 <div className="flex items-center justify-between">
                   <span
                     className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
-                      c.severity === 'high'
+                      (c.severity === 'high' || c.severity === 'critical')
                         ? 'bg-semantic-error-subtle text-semantic-error'
                         : 'bg-semantic-warning-subtle text-semantic-warning'
                     }`}
@@ -167,11 +133,13 @@ export default function FraudDetectionPage() {
               {/* Card Footer: Model Confidence & View Application Link */}
               <div className="pt-4 border-t border-border flex items-center justify-between text-xs">
                 <span className="text-text-muted font-medium">
-                  {c.confidence}% {language === 'ar' ? 'ثقة النموذج' : 'Model Confidence'}
+                  {c.confidence !== null
+                    ? `${c.confidence}% ${language === 'ar' ? 'درجة خطر الاحتيال' : 'Fraud risk score'}`
+                    : language === 'ar' ? 'بانتظار التقييم الذكي' : 'Awaiting AI scoring'}                  
                 </span>
 
                 <Link
-                  href={`/applications/${c.id.replace('-DUP', '')}`}
+                  href={`/applications/${c.id}`}               
                   className="font-semibold text-brand-navy hover:text-brand-navy-light flex items-center gap-1 group transition-colors"
                 >
                   <span>{t('action.viewApplication')}</span>
@@ -181,7 +149,9 @@ export default function FraudDetectionPage() {
             </Card>
           ))}
         </div>
+        )}
       </div>
     </AppLayout>
   );
 }
+     

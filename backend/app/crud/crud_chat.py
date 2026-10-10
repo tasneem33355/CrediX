@@ -10,8 +10,11 @@ from app.schemas.chat import ChatSessionCreate, ChatMessageCreate
 logger = logging.getLogger(__name__)
 
 
-def get_chat_sessions(db: Session) -> List[ChatSession]:
-    return db.query(ChatSession).order_by(ChatSession.created_at.desc()).all()
+def get_chat_sessions(db: Session, user_id: Optional[str] = None) -> List[ChatSession]:
+    query = db.query(ChatSession)
+    if user_id:
+        query = query.filter(ChatSession.user_id == user_id)
+    return query.order_by(ChatSession.created_at.desc()).all()
 
 
 def get_chat_session_by_id(db: Session, session_id: str) -> Optional[ChatSession]:
@@ -159,6 +162,36 @@ def add_chat_message_and_respond(
         db_session.time_ago = "الآن"
         db_session.time_ago_en = "Just now"
 
+    db.commit()
+    db.refresh(user_msg)
+    db.refresh(bot_msg)
+    return user_msg, bot_msg
+
+
+def save_chat_exchange(db: Session, session_id: str, message_in: ChatMessageCreate, answer: str):
+    """Persist an answer produced by the legacy application explainer."""
+    user_msg = ChatMessage(
+        id=f"msg_user_{random.randint(1000, 9999)}",
+        session_id=session_id,
+        sender="user",
+        text=message_in.text,
+        text_en=message_in.text_en or message_in.text,
+        timestamp="الآن",
+        citations=[],
+    )
+    bot_msg = ChatMessage(
+        id=f"msg_bot_{random.randint(1000, 9999)}",
+        session_id=session_id,
+        sender="assistant",
+        text=answer,
+        text_en=answer,
+        timestamp="الآن",
+        citations=[],
+        answer_mode="grounded",
+        provenance="retrieved",
+        segments=[],
+    )
+    db.add_all([user_msg, bot_msg])
     db.commit()
     db.refresh(user_msg)
     db.refresh(bot_msg)

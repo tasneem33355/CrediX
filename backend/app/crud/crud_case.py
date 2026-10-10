@@ -1,10 +1,10 @@
 """CRUD operations for Kanban Case Cards."""
 
-import random
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.models.case import CaseCard
 from app.schemas.case import CaseCardCreate, CaseCardUpdate
+from app.database import new_id
 
 
 def get_case_by_id(db: Session, case_id: str) -> Optional[CaseCard]:
@@ -19,8 +19,8 @@ def get_cases(db: Session, column_id: Optional[str] = None) -> List[CaseCard]:
 
 
 def create_case(db: Session, case_in: CaseCardCreate) -> CaseCard:
-    case_id = case_in.id or f"case_{random.randint(100, 999)}"
-    app_id = case_in.application_id or f"APP-2026-{random.randint(1000, 9999)}"
+    case_id = case_in.id or new_id("case")
+    app_id = case_in.application_id or new_id("orphan")
     initials = case_in.initials or (case_in.client_name.strip()[:1] if case_in.client_name else "ع")
 
     db_case = CaseCard(
@@ -63,3 +63,38 @@ def delete_case(db: Session, case_id: str) -> bool:
     db.commit()
     return True
 
+def sync_case_card(
+    db: Session,
+    application,
+    column_id: str,
+    stage_tag: str,
+    stage_tag_en: str,
+) -> Optional[CaseCard]:
+    """Create or update the Kanban card that mirrors a real application.
+
+    Does not commit: the caller commits together with its own changes.
+    """
+    # case_cards.amount has a positive-amount constraint; never let a card break a decision.
+    if not application.requested_amount or application.requested_amount <= 0:
+        return None
+    card = db.query(CaseCard).filter(CaseCard.application_id == application.id).first()
+    if card is None:
+        name = application.applicant_name or "عميل"
+        card = CaseCard(
+            id=new_id("case"),
+            application_id=application.id,
+            client_name=name,
+            client_name_en=application.applicant_name_en or name,
+            initials=name.strip()[:1] or "ع",
+            amount=application.requested_amount,
+            currency="ج.م",
+            stage_tag=stage_tag,
+            stage_tag_en=stage_tag_en,
+            column_id=column_id,
+        )
+        db.add(card)
+    else:
+        card.stage_tag = stage_tag
+        card.stage_tag_en = stage_tag_en
+        card.column_id = column_id
+    return card
