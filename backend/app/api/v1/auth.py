@@ -207,7 +207,19 @@ def modify_user_permissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_officer),
 ):
-    """Modify user role, officer delegation tier, and approval limits."""
+    """Modify user role, officer delegation tier, and approval limits.
+    
+    Restricted strictly to Credit Risk Managers or Chief Risk Officers (CRO).
+    """
+    if getattr(current_user, "officer_tier", None) not in {"risk_manager", "cro"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "INSUFFICIENT_PRIVILEGE",
+                "message": "تعديل تفويضات وسقوف الائتمان مقصور على مديري المخاطر (Risk Managers) أو رئيس القطاع (CRO) فقط.",
+            },
+        )
+
     target_user = get_user_by_id(db, user_id)
     if not target_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

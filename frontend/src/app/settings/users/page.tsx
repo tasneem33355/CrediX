@@ -208,6 +208,8 @@ export default function UsersManagementPage() {
   const managersCount = users.filter((u) => u.officerTier === 'risk_manager' || u.officerTier === 'cro').length;
   const clientsCount = users.filter((u) => u.role === 'client').length;
 
+  const canManagePermissions = isDemoMode || currentUser?.officerTier === 'risk_manager' || currentUser?.officerTier === 'cro';
+
   return (
     <AppLayout>
       <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 py-6 font-sans">
@@ -244,6 +246,18 @@ export default function UsersManagementPage() {
             </Button>
           </div>
         </div>
+
+        {/* Read-Only Notice for Junior/Senior Officers */}
+        {!canManagePermissions && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2.5">
+            <ShieldAlert className="w-4 h-4 shrink-0 text-amber-500" />
+            <span className="font-semibold">
+              {language === 'ar'
+                ? 'وضع العرض والمشاهدة: تعديل الصلاحيات وسقوف الاعتماد مقصور حصرياً على مديري المخاطر (Risk Managers) ورئيس قطاع المخاطر (CRO).'
+                : 'Read-only mode: Modifying delegation authority and credit limits is restricted strictly to Risk Managers and the CRO.'}
+            </span>
+          </div>
+        )}
 
         {/* Quick KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -490,15 +504,21 @@ export default function UsersManagementPage() {
 
                         <td className="py-3 px-4 text-end">
                           {isOfficer ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleOpenEdit(u)}
-                              className="gap-1.5 text-xs py-1 px-2.5"
-                            >
-                              <Edit2 className="w-3 h-3 text-brand-navy" />
-                              <span>{language === 'ar' ? 'تعديل الصلاحية' : 'Edit Authority'}</span>
-                            </Button>
+                            canManagePermissions ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenEdit(u)}
+                                className="gap-1.5 text-xs py-1 px-2.5"
+                              >
+                                <Edit2 className="w-3 h-3 text-brand-navy" />
+                                <span>{language === 'ar' ? 'تعديل الصلاحية' : 'Edit Authority'}</span>
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-text-muted px-2 py-1 rounded-md bg-surface-subtle font-medium">
+                                {language === 'ar' ? 'للاطلاع فقط' : 'View Only'}
+                              </span>
+                            )
                           ) : (
                             <span className="text-[11px] text-text-muted">
                               {language === 'ar' ? 'حساب مقترض' : 'Applicant'}
