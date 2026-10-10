@@ -39,6 +39,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Alert } from '@/components/ui/Alert';
 import { DocumentViewerModal } from '@/components/documents/DocumentViewerModal';
 import { VectorTaxonomyCard } from '@/components/application/VectorTaxonomyCard';
+import { ExplainerChatTab } from '@/components/application/ExplainerChatTab';
 import { mockApplications } from '@/data/mockData';
 import { isDemoMode } from '@/lib/config';
 import {
@@ -96,6 +97,10 @@ export default function ApplicationDetailPage() {
   const tabsList = [
     { id: 'extractedData', label: t('tab.extractedData') },
     { id: 'creditAssessment', label: t('tab.creditAssessment') },
+    {
+      id: 'explainerChat',
+      label: language === 'ar' ? 'تفسير الذكاء الاصطناعي والمساعد' : 'AI Explanation & Copilot',
+    },
     {
       id: 'microAnalytics',
       label: language === 'ar' ? 'تحليلات المخاطر والسيناريوهات المخصصة' : 'Risk & Scenario Analytics',
@@ -749,6 +754,18 @@ export default function ApplicationDetailPage() {
           </div>
         )}
 
+        {/* TAB: AI Explanation & Copilot Chat */}
+        {activeTab === 'explainerChat' && (
+          <ExplainerChatTab
+            applicationId={application.id}
+            applicantName={application.applicantName}
+            recommendation={application.aiRecommendationLabel || application.aiRecommendation}
+            creditScore={application.creditScore}
+            fraudRiskScore={application.fraudRiskScore}
+            reasons={application.recommendationReasons || []}
+          />
+        )}
+
         {/* TAB 3: Specific Micro-Analytics & Sensitivity Scenarios */}
         {activeTab === 'microAnalytics' && (
           analyticsError ? (
@@ -1361,17 +1378,16 @@ export default function ApplicationDetailPage() {
                 {t('application.manualReview')}
               </Button>
 
-              {/* Ask AI Assistant Button */}
-              <Link href="/ai-assistant">
-                <Button
-                  variant="outline"
-                  size="md"
-                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/10"
-                  icon={<Bot className="w-4 h-4 text-brand-navy" />}
-                >
-                  {t('application.askAI')}
-                </Button>
-              </Link>
+              {/* Ask AI / Explainer Button */}
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => setActiveTab('explainerChat')}
+                className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/10"
+                icon={<Bot className="w-4 h-4 text-brand-navy" />}
+              >
+                {language === 'ar' ? 'تفسير الذكاء الاصطناعي' : 'AI Explanation'}
+              </Button>
             </div>
           </div>
         </div>
