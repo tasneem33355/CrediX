@@ -628,3 +628,35 @@ export async function updateUserPermissions(
   return res.json();
 }
 
+export async function resolveSemanticTerm(
+  term: string,
+  compareWith?: string,
+  token?: string
+) {
+  const query = new URLSearchParams({ term });
+  if (compareWith) query.set('compare_with', compareWith);
+  const res = await fetch(`${API_BASE}/ocr/semantic-match?${query.toString()}`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to resolve semantic vector match (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function normalizeSchemaFields(
+  payload: Record<string, any>,
+  token?: string
+) {
+  const res = await fetch(`${API_BASE}/ocr/normalize-schema`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to normalize schema fields (${res.status})`);
+  }
+  return res.json();
+}
+
+

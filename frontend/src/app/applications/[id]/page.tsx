@@ -38,6 +38,7 @@ import { CircularScoreGauge, LinearFraudRiskBar } from '@/components/ui/ScoreGau
 import { Modal } from '@/components/ui/Modal';
 import { Alert } from '@/components/ui/Alert';
 import { DocumentViewerModal } from '@/components/documents/DocumentViewerModal';
+import { VectorTaxonomyCard } from '@/components/application/VectorTaxonomyCard';
 import { mockApplications } from '@/data/mockData';
 import { isDemoMode } from '@/lib/config';
 import {
@@ -600,6 +601,14 @@ export default function ApplicationDetailPage() {
                 </div>
               </Card>
             </div>
+
+            {/* Vector Taxonomy Resolver & Semantic Cross-Verification Card */}
+            <VectorTaxonomyCard
+              applicantOccupation={application.occupation || 'أخصائي تطوير أعمال'}
+              applicantOccupationEn={application.occupationEn || 'Business Development Specialist'}
+              applicantCompany={application.companyName || 'شركة النيل للحلول التقنية (ش.م.م)'}
+              token={session?.access_token}
+            />
           </div>
         )}
 
