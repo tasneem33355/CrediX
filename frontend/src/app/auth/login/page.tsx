@@ -312,9 +312,13 @@ function AuthContent() {
         }
         setNeedsVerification(error.code === 'EMAIL_NOT_CONFIRMED');
       } else if (error instanceof AuthApiError) {
-        setFormError(error.code === 'PROFILE_NOT_PROVISIONED'
-          ? (language === 'ar' ? 'تعذر تجهيز ملف الحساب. حاول مرة أخرى.' : 'Your CrediX profile could not be prepared. Please try again.')
-          : (language === 'ar' ? 'خدمات CrediX غير متاحة حالياً.' : 'CrediX services are unavailable right now. Please try again.'));
+        const isNetworkIssue = error.code === 'NETWORK_ERROR' || error.code === 'API_NOT_CONFIGURED';
+        setFormError(
+          error.code === 'PROFILE_NOT_PROVISIONED'
+            ? (language === 'ar' ? 'تعذر تجهيز ملف الحساب. حاول مرة أخرى.' : 'Your CrediX profile could not be prepared. Please try again.')
+            : isNetworkIssue
+              ? (language === 'ar' ? 'تعذر الاتصال بخادم CrediX. تأكد من اتصالك بالإنترنت أو حاول مرة أخرى.' : 'Could not reach the CrediX server. Check your connection and try again.')
+              : (language === 'ar' ? 'خدمات CrediX غير متاحة حالياً. حاول مرة أخرى.' : 'CrediX services are unavailable right now. Please try again.'));
       } else {
         setFormError(language === 'ar' ? 'تعذر تسجيل الدخول. تأكد من البيانات وحاول مرة أخرى.' : 'We could not sign you in right now. Please try again.');
       }

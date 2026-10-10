@@ -21,14 +21,20 @@ function getApiBaseUrl(): string {
 }
 
 async function authRequest<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/json',
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        ...init?.headers,
+      },
+    });
+  } catch (err: any) {
+    if (err instanceof AuthApiError) throw err;
+    throw new AuthApiError(err?.message || 'Failed to connect to CrediX backend API', 'NETWORK_ERROR');
+  }
 
   if (response.ok) {
     return response.json() as Promise<T>;
