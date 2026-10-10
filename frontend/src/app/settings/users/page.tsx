@@ -32,7 +32,7 @@ import type { User, OfficerTier } from '@/types';
 
 const TIER_CONFIG: Record<
   OfficerTier,
-  { labelAr: string; labelEn: string; defaultLimit: number; canOverride: boolean; color: string; badgeVariant: 'default' | 'success' | 'warning' | 'error' }
+  { labelAr: string; labelEn: string; defaultLimit: number; canOverride: boolean; color: string; badgeVariant: 'info' | 'success' | 'warning' | 'danger' }
 > = {
   junior_officer: {
     labelAr: 'مسؤول ائتمان مبتدئ',
@@ -40,7 +40,7 @@ const TIER_CONFIG: Record<
     defaultLimit: 250000,
     canOverride: false,
     color: 'border-blue-500/30 text-blue-400 bg-blue-500/10',
-    badgeVariant: 'default',
+    badgeVariant: 'info',
   },
   senior_officer: {
     labelAr: 'كبير مسؤولي الائتمان',
@@ -64,7 +64,7 @@ const TIER_CONFIG: Record<
     defaultLimit: 100000000,
     canOverride: true,
     color: 'border-purple-500/30 text-purple-400 bg-purple-500/10',
-    badgeVariant: 'error',
+    badgeVariant: 'danger',
   },
 };
 
@@ -446,7 +446,7 @@ export default function UsersManagementPage() {
                         </td>
 
                         <td className="py-3 px-4">
-                          <Badge variant={isOfficer ? 'default' : 'secondary'} size="sm">
+                          <Badge variant={isOfficer ? 'info' : 'neutral'} size="sm">
                             {isOfficer
                               ? (language === 'ar' ? 'مسؤول ائتمان' : 'Credit Officer')
                               : (language === 'ar' ? 'عميل مقترض' : 'Client')}
