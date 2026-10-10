@@ -128,7 +128,12 @@ def add_chat_message_and_respond(
             bot_text_en = "The general AI assistant is temporarily unavailable. Please try again."
             answer_mode = "general"
         elif message_in.mode == "auto":
-            bot_text = "Unable to safely classify or answer this question right now. No unsupported claim was generated."
+            arabic = any("\u0600" <= char <= "\u06ff" for char in message_in.text)
+            bot_text = (
+                "تعذر تصنيف السؤال أو الإجابة عنه بأمان حالياً. لم يتم إنشاء أي معلومة غير مدعومة."
+                if arabic
+                else "Unable to safely classify or answer this question right now. No unsupported claim was generated."
+            )
             bot_text_en = "The assistant could not safely classify or answer this question. No unsupported claim was generated."
             answer_mode = "insufficient_evidence"
         else:

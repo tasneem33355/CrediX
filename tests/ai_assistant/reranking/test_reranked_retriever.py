@@ -13,6 +13,7 @@ from src.ai_assistant.reranking.reranked_retriever import (
     needs_adaptive_candidate_pool,
     rerank_candidates,
 )
+import src.ai_assistant.reranking.reranked_retriever as reranked_module
 
 
 def candidate(chunk_id: str, score: float) -> RetrievalCandidate:
@@ -102,6 +103,42 @@ def test_adaptive_pool_allows_explicit_effective_output_limit() -> None:
         "هل يخضع 300 ألف جنيه للتسجيل؟", output_top_k=30
     )
     assert len(result.reranked_results) == 3
+
+
+def test_unavailable_cross_encoder_keeps_fused_retrieval_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FailingReranker:
+        def __init__(self, config):
+            raise ValueError("CUDA was requested for reranking but is not available")
+
+    monkeypatch.setattr(reranked_module, "CrossEncoderReranker", FailingReranker)
+    config = RerankerConfig(candidate_strategy="union_d20_b20", dense_candidate_k=2,
+                            bm25_candidate_k=2, rerank_candidate_limit=10, output_top_k=3)
+    result = reranked_module.RerankedRetriever(config, retriever=FakeHybrid()).retrieve("query")
+    assert result.reranked_results
+    assert result.configuration["reranker_available"] is False
+    assert result.configuration["reranker_fallback"] is True
+    assert "CUDA was requested" in result.configuration["reranker_error"]
+
+
+def test_dense_failure_keeps_lexical_retrieval_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DenseUnavailableHybrid(FakeHybrid):
+        def retrieve(self, query, dense_top_k, bm25_top_k):
+            raise RuntimeError("sentence-transformers model is unavailable")
+
+        def retrieve_bm25(self, query, top_k=None):
+            return self.bm25[:top_k]
+
+    class FailingReranker:
+        def __init__(self, config):
+            raise RuntimeError("reranker unavailable")
+
+    monkeypatch.setattr(reranked_module, "CrossEncoderReranker", FailingReranker)
+    config = RerankerConfig(candidate_strategy="union_d20_b20", dense_candidate_k=2,
+                            bm25_candidate_k=2, rerank_candidate_limit=10, output_top_k=2)
+    result = reranked_module.RerankedRetriever(config, retriever=DenseUnavailableHybrid()).retrieve("query")
+    assert [item.chunk_id for item in result.reranked_results] == ["shared", "bm25"]
+    assert result.configuration["retrieval_degraded"] is True
+    assert "sentence-transformers" in result.configuration["retrieval_error"]
 
 
 @pytest.mark.skipif(
