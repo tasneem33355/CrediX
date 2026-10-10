@@ -24,10 +24,11 @@ type ApiChatMessage = {
 };
 
 function apiBaseUrl(): string {
-  const customAiUrl = process.env.NEXT_PUBLIC_AI_ASSISTANT_API_URL;
-  if (customAiUrl) return customAiUrl.replace(/\/$/, '');
-  const generalUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (generalUrl) return generalUrl.replace(/\/$/, '');
+  // If explicitly configured in environment, use it
+  if (process.env.NEXT_PUBLIC_AI_ASSISTANT_API_URL) {
+    return process.env.NEXT_PUBLIC_AI_ASSISTANT_API_URL.replace(/\/$/, '');
+  }
+  // Standalone RAG Assistant service on Railway
   return 'https://credix-ai-assistant-production.up.railway.app/api/v1';
 }
 
