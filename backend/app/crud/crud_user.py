@@ -42,3 +42,13 @@ def create_user(db: Session, user_in: UserCreate) -> User:
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+def update_user_permissions(db: Session, user: User, update_data: dict) -> User:
+    for field, value in update_data.items():
+        if value is not None and hasattr(user, field):
+            setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+

@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   X,
+  Users,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLanguage } from '@/context/LanguageContext';
@@ -78,6 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: t('nav.caseManagement'),
       href: '/case-management',
       icon: Briefcase,
+    },
+    {
+      id: 'settings-users',
+      label: language === 'ar' ? 'إدارة الصلاحيات' : 'Team & Authority',
+      href: '/settings/users',
+      icon: Users,
     },
   ];
 

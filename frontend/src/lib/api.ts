@@ -596,3 +596,35 @@ export async function fetchDashboardTrends(token?: string): Promise<{ day: strin
   const res = await fetch(`${API_BASE}/dashboard/trends`, { headers: getHeaders(token) });
   return res.ok ? res.json() : [];
 }
+
+export async function fetchUsersList(token?: string) {
+  const res = await fetch(`${API_BASE}/users`, { headers: getHeaders(token) });
+  if (!res.ok) {
+    throw new Error(`Failed to load users list (Status ${res.status})`);
+  }
+  return res.json();
+}
+
+export async function updateUserPermissions(
+  userId: string,
+  data: {
+    role?: string;
+    officerTier?: string;
+    approvalLimitEgp?: number;
+    canOverridePolicy?: boolean;
+    title?: string;
+    titleEn?: string;
+  },
+  token?: string
+) {
+  const res = await fetch(`${API_BASE}/users/${userId}/permissions`, {
+    method: 'PATCH',
+    headers: getHeaders(token),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to update permissions (${res.status})`));
+  }
+  return res.json();
+}
+

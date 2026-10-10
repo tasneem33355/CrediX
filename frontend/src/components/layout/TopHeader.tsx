@@ -13,6 +13,7 @@ import {
   Menu,
   LogOut,
   Shield,
+  ShieldCheck,
   Check,
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -329,7 +330,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               )}
 
               {/* Actions */}
-              <div className="p-1.5 space-y-0.5">
+              <div className="p-1.5 space-y-0.5 border-t border-border">
+                {user?.role === 'officer' && (
+                  <Link
+                    href="/settings/users"
+                    onClick={() => setIsProfileMenuOpen(false)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-text-primary hover:bg-surface-subtle transition-colors duration-fast cursor-pointer"
+                    role="menuitem"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-brand-navy" />
+                    <span>{language === 'ar' ? 'إدارة الصلاحيات والفريق' : 'Team & Authority Matrix'}</span>
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={() => void handleSignOut()}

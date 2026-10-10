@@ -22,7 +22,7 @@ from app.crud.crud_user import (
     get_users,
 )
 from app.models.user import User
-from app.schemas.user import UserResponse, UserCreate, LoginRequest
+from app.schemas.user import UserResponse, UserCreate, LoginRequest, UserUpdatePermissions
 
 router = APIRouter(prefix="", tags=["Authentication & Users"])
 
@@ -195,3 +195,39 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     return create_user(db, user_in)
+
+
+@router.patch(
+    "/users/{user_id}/permissions",
+    response_model=UserResponse,
+)
+def modify_user_permissions(
+    user_id: str,
+    update_data: UserUpdatePermissions,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_officer),
+):
+    """Modify user role, officer delegation tier, and approval limits."""
+    target_user = get_user_by_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    payload = update_data.model_dump(exclude_unset=True)
+    # Default title and titles based on tier if changed
+    tier_titles = {
+        "junior_officer": ("مسؤول ائتمان مبتدئ", "Junior Credit Officer"),
+        "senior_officer": ("كبير مسؤولي الائتمان", "Senior Credit Officer"),
+        "risk_manager": ("مدير إدارة مخاطر الائتمان", "Credit Risk Manager"),
+        "cro": ("رئيس قطاع المخاطر والائتمان (CRO)", "Chief Risk Officer"),
+    }
+    if "officer_tier" in payload and payload["officer_tier"] in tier_titles:
+        ar_title, en_title = tier_titles[payload["officer_tier"]]
+        if "title" not in payload:
+            payload["title"] = ar_title
+        if "title_en" not in payload:
+            payload["title_en"] = en_title
+
+    from app.crud.crud_user import update_user_permissions
+    updated = update_user_permissions(db, target_user, payload)
+    return updated
+
