@@ -29,7 +29,7 @@ import {
   mockChatSessions,
   mockInitialChatMessages,
 } from '@/data/mockData';
-import { ChatMessage } from '@/types';
+import { ChatMessage, ChatSession } from '@/types';
 import { isDemoMode } from '@/lib/config';
 import {
   createChatSession,
