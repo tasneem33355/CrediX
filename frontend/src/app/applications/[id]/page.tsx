@@ -604,6 +604,7 @@ export default function ApplicationDetailPage() {
 
             {/* Vector Taxonomy Resolver & Semantic Cross-Verification Card */}
             <VectorTaxonomyCard
+              applicationId={application.id}
               applicantOccupation={application.occupation || 'أخصائي تطوير أعمال'}
               applicantOccupationEn={application.occupationEn || 'Business Development Specialist'}
               applicantCompany={application.companyName || 'شركة النيل للحلول التقنية (ش.م.م)'}

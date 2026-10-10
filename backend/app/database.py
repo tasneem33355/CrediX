@@ -57,3 +57,49 @@ def ensure_schema_compatibility() -> None:
         # Prevent non-blocking startup failure if read-only user or tables not yet created
         pass
 
+
+def ensure_pgvector_schema() -> None:
+    """Set up pgvector extension and vector_embeddings table for semantic similarity search.
+
+    - Enables the 'vector' PostgreSQL extension (requires superuser on first run in Supabase).
+    - Creates the vector_embeddings table with a 128-dim float vector column.
+    - Creates an ivfflat index for approximate cosine similarity queries (fast at scale).
+
+    This is idempotent: all DDL uses IF NOT EXISTS, safe to run on every startup.
+    Silently no-ops on SQLite (used in tests) and on any permission error.
+    """
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if conn.dialect.name != "postgresql":
+                return
+
+            # 1. Enable pgvector extension (idempotent)
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+            # 2. Create vector_embeddings table
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS vector_embeddings (
+                    id              TEXT PRIMARY KEY,
+                    application_id  TEXT NOT NULL REFERENCES loan_applications(id) ON DELETE CASCADE,
+                    embedding_key   TEXT NOT NULL,
+                    source_text     TEXT,
+                    vector          vector(128) NOT NULL,
+                    model_name      TEXT DEFAULT 'credix-hashvec-v1',
+                    created_at      TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE (application_id, embedding_key)
+                );
+            """))
+
+            # 3. ivfflat index for fast cosine-distance neighbours
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_vector_embeddings_cosine
+                    ON vector_embeddings
+                    USING ivfflat (vector vector_cosine_ops)
+                    WITH (lists = 100);
+            """))
+    except Exception:
+        # pgvector may not be available on all Supabase tiers — fail silently so
+        # the rest of the API remains functional.
+        pass
+

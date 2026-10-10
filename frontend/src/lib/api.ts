@@ -659,4 +659,24 @@ export async function normalizeSchemaFields(
   return res.json();
 }
 
+export async function fetchSimilarApplications(
+  appId: string,
+  topK: number = 5,
+  minSimilarity: number = 0.55,
+  token?: string
+) {
+  const query = new URLSearchParams({
+    top_k: topK.toString(),
+    min_similarity: minSimilarity.toString(),
+  });
+  const res = await fetch(`${API_BASE}/applications/${appId}/similar?${query.toString()}`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch similar applications (${res.status})`);
+  }
+  return res.json();
+}
+
+
 

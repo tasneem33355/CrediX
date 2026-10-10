@@ -43,9 +43,10 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 @app.on_event("startup")
 def on_startup():
-    """Ensure database schema has recent column migrations."""
-    from app.database import ensure_schema_compatibility
+    """Ensure database schema has recent column migrations and pgvector tables."""
+    from app.database import ensure_schema_compatibility, ensure_pgvector_schema
     ensure_schema_compatibility()
+    ensure_pgvector_schema()
 
 
 

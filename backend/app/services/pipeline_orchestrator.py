@@ -281,6 +281,21 @@ async def ingest_ocr_and_create_application(
     db.commit()
     db.refresh(app)
 
+    # 6. Store vector embeddings for semantic similarity search & occupational matching
+    try:
+        from app.services.vector_store import upsert_application_vectors
+        upsert_application_vectors(
+            db=db,
+            application_id=app.id,
+            job_title=profile.get("job_title"),
+            employer=profile.get("employer"),
+            loan_type=loan_type,
+            purpose=purpose,
+            occupation=app.occupation,
+        )
+    except Exception:
+        pass
+
     return {
         "application_id": app.id,
         "is_consistent": is_consistent,

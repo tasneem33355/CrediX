@@ -183,3 +183,28 @@ def application_analytics(
     if not db_app:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Application {app_id} not found")
     return get_application_analytics(db, db_app)
+
+
+@router.get("/{app_id}/similar")
+def get_similar_applications_endpoint(
+    app_id: str,
+    top_k: int = Query(5, ge=1, le=20),
+    min_similarity: float = Query(0.55, ge=0.0, le=1.0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_authenticated_user),
+):
+    """Retrieve semantically similar applications using vector embeddings (pgvector)."""
+    # Ensure application is accessible to current user
+    _load_accessible_application(db, app_id, current_user)
+    
+    from app.services.vector_store import find_similar_applications, get_application_embedding_summary
+    similar = find_similar_applications(db=db, application_id=app_id, top_k=top_k, min_similarity=min_similarity)
+    summary = get_application_embedding_summary(db=db, application_id=app_id)
+    
+    return {
+        "application_id": app_id,
+        "embedding_summary": summary,
+        "count": len(similar),
+        "similar_applications": similar,
+    }
+
