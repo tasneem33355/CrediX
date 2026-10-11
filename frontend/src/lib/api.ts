@@ -208,6 +208,21 @@ export async function sendChatMessage(
   return res.json();
 }
 
+/**
+ * Returns the chat session dedicated to one application, creating it on first use.
+ * The application id is embedded in the title so the same officer always gets the same thread back.
+ */
+export async function getOrCreateApplicationChatSession(
+  applicationId: string,
+  token?: string
+): Promise<ChatSession> {
+  const title = `application:${applicationId}`;
+  const sessions = await fetchChatSessions(token);
+  const existing = sessions.find((s) => s.title === title);
+  if (existing) return existing;
+  return createChatSession(title, token);
+}
+
 export async function createCase(
   data: { clientName: string; amount: number; stageTag: string; stageTagEn: string },
   token?: string

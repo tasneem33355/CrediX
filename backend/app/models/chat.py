@@ -34,6 +34,11 @@ class ChatMessage(Base):
     timestamp = Column(String(50), nullable=False)
     citations = Column(JSON, nullable=True, default=list)  # [{documentName, documentNameEn, page, quote}]
     suggested_action = Column(JSON, nullable=True)         # {label, labelEn, description, descriptionEn}
+    # Explicit provenance contract; nullable for historical messages.
+    answer_mode = Column(String(30), nullable=True)
+    provenance = Column(String(30), nullable=True)
+    disclaimer = Column(Text, nullable=True)
+    segments = Column(JSON, nullable=True, default=list)
 
     session = relationship("ChatSession", back_populates="messages")
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -69,3 +69,12 @@ def health_check():
         "status": "ok",
         "service": settings.SERVICE_NAME,
     }
+
+
+@app.get("/api/v1/health", tags=["Health & Status"])
+def api_health_check():
+    """Health alias for platform probes routed through the API prefix."""
+    return {
+        "status": "ok",
+        "service": settings.SERVICE_NAME,
+    }

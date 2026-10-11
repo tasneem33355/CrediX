@@ -9,4 +9,16 @@ pydantic-settings>=2.2.1
 python-dotenv>=1.0.1
 python-multipart>=0.0.9
 httpx>=0.27.0
+# LLM providers used by the lazy CrediX assistant runtime.  Keep both
+# provider SDKs installable so LLM_PROVIDER can be selected by environment
+# without a runtime import failure.
+google-genai>=1.0.0
+groq>=0.11.0
 pytest>=8.0.0
+
+# Lightweight RAG adapter dependency. Dense embeddings, FAISS, and the
+# cross-encoder remain optional: the runtime uses the certified BM25 index when
+# a serverless/CPU host cannot carry the full model stack. Install
+# src/rag/requirements.txt in a dedicated RAG service for full dense+reranked
+# quality; do not force those multi-hundred-MB packages into a Vercel function.
+numpy>=1.24.0
