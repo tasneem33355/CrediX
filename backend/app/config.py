@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     ENABLE_LEGACY_LOGIN: bool = False
 
     # External ML & AI Services
-    OCR_SERVICE_URL: str = "https://document-ocr-service-production-93e9.up.railway.app"
+    OCR_SERVICE_URL: str = "https://ocr-document-processing-production.up.railway.app"
     CREDIT_RISK_SERVICE_URL: str = "https://credit-risk-ml-system-v1-production.up.railway.app"
     LLM_EXPLAINER_SERVICE_URL: str = "https://llm-explainer-service-production.up.railway.app"
     PORTFOLIO_ANALYTICS_SERVICE_URL: str = "https://portfolio-analytics-service-production.up.railway.app"
