@@ -12,6 +12,13 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'CrediX - Smart Financing & Credit Intelligence',
   description: 'AI-Powered Credit Application & Risk Analysis Platform for Egyptian Financial Sector',
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    apple: '/apple-icon.png',
+  },
 };
 
 export default function RootLayout({

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="235 76 330 280">
+  <style>
+    :root { color: #174A66; }
+    @media (prefers-color-scheme: dark) {
+      :root { color: #4ba3c7; }
+    }
+  </style>
+  <g fill="currentColor">
+    <path d="M270 285h260v18H270zM258 306h284v16H258zM246 327h308v19H246z" />
+    <path d="M286 203h28v14h-4v70h-20v-70h-4zM326 203h28v14h-4v70h-20v-70h-4zM446 203h28v14h-4v70h-20v-70h-4zM486 203h28v14h-4v70h-20v-70h-4z" />
+    <path d="M379 285v-53c0-16 10-27 21-27s21 11 21 27v53z" />
+    <path d="M256 170h288v27H256zM278 198h244v12H278z" />
+  </g>
+  <path d="M280 161v-16l120-58 120 58v16z" fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-width="12" />
+</svg>

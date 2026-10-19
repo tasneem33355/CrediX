@@ -16,124 +16,293 @@ import {
   ExternalLink,
   PanelLeftClose,
   PanelLeftOpen,
+  Trash2,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLanguage } from '@/context/LanguageContext';
+import { useAuth } from '@/context/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { Select } from '@/components/ui/Select';
-import { useAuth } from '@/context/AuthContext';
 import {
-  fetchApplicationsList,
-  fetchChatSessions,
-  createChatSession,
-  fetchChatMessages,
-  sendChatMessage,
-} from '@/lib/api';
+  mockChatSessions,
+  mockInitialChatMessages,
+} from '@/data/mockData';
 import { ChatMessage, ChatSession } from '@/types';
+import { isDemoMode } from '@/lib/config';
+import {
+  createChatSession,
+  getChatMessages,
+  getChatSessions,
+  postChatMessage,
+  deleteChatSession,
+} from '@/lib/chat/api';
 
 export default function AIAssistantPage() {
   const { t, language, direction } = useLanguage();
+  const { session } = useAuth();
   const Arrow = direction === 'rtl' ? ArrowLeft : ArrowRight;
 
-  const { session } = useAuth();
-  const token = session?.access_token;
-
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [apps, setApps] = useState<{ id: string; name: string; nameEn: string }[]>([]);
-  const [selectedAppId, setSelectedAppId] = useState('');
+  const [sessions, setSessions] = useState<ChatSession[]>(isDemoMode ? mockChatSessions : []);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(isDemoMode ? 'sess_1' : null);
+  const [messages, setMessages] = useState<ChatMessage[]>(isDemoMode ? mockInitialChatMessages : []);
   const [inputQuestion, setInputQuestion] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  // Auto is conservative; document-grounded remains the safe fallback.
+  const [assistantMode, setAssistantMode] = useState<'auto' | 'grounded' | 'general'>('auto');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  // Set when a session is auto-created while sending, so the message loader does not wipe the screen.
-  const skipNextLoadRef = useRef(false);
+
+  const accessToken = session?.access_token;
+
+  // In live mode, replace the showcase data with the persisted FastAPI chat.
+  useEffect(() => {
+    if (isDemoMode || !accessToken) return;
+    let cancelled = false;
+
+    const loadLiveChat = async () => {
+      try {
+        const remoteSessions = await getChatSessions(accessToken);
+        if (cancelled) return;
+        if (remoteSessions.length === 0) {
+          const created = await createChatSession(
+            language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+            accessToken,
+          );
+          if (cancelled) return;
+          setSessions([created]);
+          setActiveSessionId(created.id);
+          setMessages([]);
+          return;
+        }
+        const firstSession = remoteSessions[0];
+        setSessions(remoteSessions);
+        setActiveSessionId(firstSession.id);
+        // The session-message effect below owns message loading. Keeping one
+        // request path avoids duplicate requests and stale-session races.
+        setMessages([]);
+      } catch (error) {
+        console.error('Could not load the live RAG chat.', error);
+      }
+    };
+
+    void loadLiveChat();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, language]);
+
+  useEffect(() => {
+    if (isDemoMode || !accessToken || !activeSessionId) return;
+    let cancelled = false;
+
+    const loadSessionMessages = async () => {
+      try {
+        const remoteMessages = await getChatMessages(activeSessionId, accessToken);
+        if (!cancelled) setMessages(remoteMessages);
+      } catch (error) {
+        console.error('Could not load the selected chat session.', error);
+      }
+    };
+
+    void loadSessionMessages();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, activeSessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  // Load the officer's conversations and the applications they can ask about.
-  useEffect(() => {
-    if (!token) return;
-    fetchChatSessions(token)
-      .then((list) => {
-        setSessions(list);
-        if (list.length > 0) setActiveSessionId(list[0].id);
-      })
-      .catch((e: Error) => setChatError(e.message));
-    fetchApplicationsList({ limit: 100 }, token)
-      .then((list) => {
-        const items = (list as any[]).map((a) => ({
-          id: a.id as string,
-          name: `${a.id} — ${a.applicantName}`,
-          nameEn: `${a.id} — ${a.applicantNameEn || a.applicantName}`,
-        }));
-        setApps(items);
-        if (items.length > 0) setSelectedAppId((prev) => prev || items[0].id);
-      })
-      .catch((e: Error) => setChatError(e.message));
-  }, [token]);
+  const handleLiveSend = async (q: string) => {
+    let sessionId = activeSessionId;
+    const userMsg: ChatMessage = {
+      id: `msg_${Date.now()}`,
+      sender: 'user',
+      text: q,
+      textEn: q,
+      timestamp: new Date().toLocaleTimeString(language === 'ar' ? 'ar-EG' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
 
-  // Load the messages of the active conversation.
-  useEffect(() => {
-    if (!token || !activeSessionId) {
-      setMessages([]);
+    setMessages((prev) => [...prev, userMsg]);
+    setIsTyping(true);
+    try {
+      if (!sessionId) {
+        const created = await createChatSession(
+          language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+          accessToken,
+        );
+        sessionId = created.id;
+        setSessions((prev) => [created, ...prev]);
+        setActiveSessionId(created.id);
+      }
+
+      const responseMessages = await postChatMessage(sessionId, q, accessToken, assistantMode);
+      const assistantMessage = responseMessages.find((message) => message.sender === 'assistant');
+      if (assistantMessage) setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error: any) {
+      console.error('Live RAG request failed.', error);
+      const errMsg = error?.message || 'تعذر تشغيل مساعد المستندات حالياً. يرجى المحاولة مرة أخرى.';
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_error_${Date.now()}`,
+          sender: 'assistant',
+          text: errMsg,
+          textEn: errMsg,
+          timestamp: language === 'ar' ? 'الآن' : 'Now',
+        },
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleSend = (textToSend?: string) => {
+    const q = textToSend || inputQuestion;
+    if (!q.trim()) return;
+
+    if (!isDemoMode) {
+      setInputQuestion('');
+      void handleLiveSend(q.trim());
       return;
     }
-    if (skipNextLoadRef.current) {
-      skipNextLoadRef.current = false;
-      return;
-    }
-    fetchChatMessages(activeSessionId, token)
-      .then(setMessages)
-      .catch((e: Error) => setChatError(e.message));
-  }, [activeSessionId, token]);
 
-  const handleSend = async (textToSend?: string) => {
-    const q = (textToSend ?? inputQuestion).trim();
-    if (!q || isTyping || !token) return;
-    if (!selectedAppId) {
-      setChatError(language === 'ar' ? 'اختر الطلب أولاً.' : 'Please select an application first.');
-      return;
-    }
+    const userMsg: ChatMessage = {
+      id: `msg_${Date.now()}`,
+      sender: 'user',
+      text: q,
+      textEn: q,
+      timestamp: new Date().toLocaleTimeString(language === 'ar' ? 'ar-EG' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
 
-    setChatError(null);
-    const tempId = `tmp_${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      { id: tempId, sender: 'user', text: q, textEn: q, timestamp: '' },
-    ]);
+    setMessages((prev) => [...prev, userMsg]);
     setInputQuestion('');
     setIsTyping(true);
 
-    try {
-      let sessionId = activeSessionId;
-      if (!sessionId) {
-        const created = await createChatSession(q.slice(0, 40), token);
-        setSessions((prev) => [created, ...prev]);
-        skipNextLoadRef.current = true;
-        setActiveSessionId(created.id);
-        sessionId = created.id;
+    // Simulate RAG Assistant response with cited document proof
+    setTimeout(() => {
+      let botResponse: ChatMessage;
+
+      if (assistantMode === 'general') {
+        botResponse = {
+          id: `msg_bot_${Date.now()}`,
+          sender: 'assistant',
+          text: 'ده شرح عام مولّد بالذكاء الاصطناعي وليس من مستندات CrediX.',
+          textEn: 'This is a general AI-generated explanation, not an answer retrieved from CrediX documents.',
+          timestamp: 'الآن',
+          citations: [],
+          answerMode: 'general',
+          provenance: 'ai_generated',
+          disclaimer: language === 'ar'
+            ? 'إجابة مولّدة بالذكاء الاصطناعي وليست من المستندات.'
+            : 'AI-generated answer; not retrieved from CrediX documents.',
+        };
+      } else if (q.includes('متناقضات') || q.includes('discrepancies')) {
+        botResponse = {
+          id: `msg_bot_${Date.now()}`,
+          sender: 'assistant',
+          text: 'نعم، تم رصد تناقض بين شهادة الدخل (المعلن: 85,000 ج.م) وكشف الحساب البنكي الصادر من البنك الأهلي المصري (المتوسط الفعلي: 53,700 ج.م شهرياً).',
+          textEn: 'Yes, a discrepancy was identified between the Income Certificate (declared: 85,000 EGP) and the National Bank of Egypt statement (actual average: 53,700 EGP/month).',
+          timestamp: 'الآن',
+          citations: [
+            {
+              documentName: 'كشف حساب بنكي - صفحة 3',
+              documentNameEn: 'Bank Statement - Page 3',
+              page: 3,
+              quote: 'متوسط التدفق الشهري الدائن: 53,700 ج.م',
+            },
+            {
+              documentName: 'شهادة الدخل',
+              documentNameEn: 'Income Certificate',
+              page: 1,
+              quote: 'الدخل الصافي المعلن: 85,000 ج.م',
+            },
+          ],
+          suggestedAction: {
+            label: 'إجراء مقترح',
+            labelEn: 'Suggested Action',
+            description: 'طلب كشف حساب بنكي لـ 6 أشهر إضافية أو إقرار ضريبي موثق.',
+            descriptionEn: 'Request an additional 6-month bank statement or certified tax return.',
+          },
+        };
+      } else {
+        botResponse = {
+          id: `msg_bot_${Date.now()}`,
+          sender: 'assistant',
+          text: `بناءً على وثائق طلب ${activeSessionId === 'sess_1' ? 'أحمد فؤاد' : 'العميل'}، فإن درجة الجدارة الائتمانية تبلغ 54/100 (مخاطر متوسطة) ونسبة عبء الدين DBR تتوافق مع معايير البنك المركزي بنسبة 78%.`,
+          textEn: `Based on the application documents, the creditworthiness score is 54/100 (Medium Risk) with a DBR rating of 78% complying with CBE guidelines.`,
+          timestamp: 'الآن',
+          citations: [
+            {
+              documentName: 'تقرير الاستعلام الائتماني i-Score',
+              documentNameEn: 'i-Score Credit Report',
+              page: 1,
+              quote: 'الدرجة الائتمانية المسجلة: 54/100',
+            },
+          ],
+        };
       }
-      const pair = await sendChatMessage(
-        sessionId,
-        { text: q, applicationId: selectedAppId, lang: language === 'ar' ? 'ar' : 'en' },
-        token
-      );
-      setMessages((prev) => [...prev.filter((m) => m.id !== tempId), ...pair]);
-    } catch (err: any) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setInputQuestion(q);
-      setChatError(err.message || (language === 'ar' ? 'تعذّر إرسال السؤال، حاول مرة أخرى.' : 'Could not send your question, please try again.'));
-    } finally {
+
+      setMessages((prev) => [...prev, botResponse]);
       setIsTyping(false);
+    }, 1000);
+  };
+
+  const handleDeleteSession = async (event: React.MouseEvent, sessionId: string) => {
+    event.stopPropagation();
+    const confirmed = window.confirm(
+      language === 'ar'
+        ? 'هل تريد حذف هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.'
+        : 'Delete this conversation? This action cannot be undone.',
+    );
+    if (!confirmed) return;
+
+    setDeletingSessionId(sessionId);
+    try {
+      if (!isDemoMode) await deleteChatSession(sessionId, accessToken);
+      const remaining = sessions.filter((item) => item.id !== sessionId);
+      setSessions(remaining);
+
+      if (activeSessionId !== sessionId) return;
+      if (remaining.length > 0) {
+        setActiveSessionId(remaining[0].id);
+        setMessages([]);
+        return;
+      }
+
+      if (isDemoMode) {
+        setActiveSessionId(null);
+        setMessages([]);
+        return;
+      }
+
+      const created = await createChatSession(
+        language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+        accessToken,
+      );
+      setSessions([created]);
+      setActiveSessionId(created.id);
+      setMessages([]);
+    } catch (error) {
+      console.error('Could not delete chat session.', error);
+      window.alert(
+        language === 'ar'
+          ? 'تعذر حذف المحادثة حالياً. حاول مرة أخرى.'
+          : 'The conversation could not be deleted. Please try again.',
+      );
+    } finally {
+      setDeletingSessionId(null);
     }
   };
 
@@ -162,43 +331,54 @@ export default function AIAssistantPage() {
           {/* Left Sessions Sidebar (Collapsible) */}
           {isHistoryOpen && (
             <Card className="w-full lg:w-64 xl:w-72 shrink-0 p-3.5 flex flex-col justify-between overflow-hidden transition-all duration-300 min-h-0 h-full">
-              <div className="flex items-center justify-between px-1 pb-2.5 border-b border-border text-xs font-bold text-text-primary shrink-0">
+              <div className="flex items-center px-1 pb-2.5 border-b border-border text-xs font-bold text-text-primary shrink-0">
                 <div className="flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-brand-navy" />
                   <span>{t('ai.chatHistory')}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsHistoryOpen(false)}
-                  className="p-1.5 rounded-lg text-text-secondary hover:text-brand-navy hover:bg-surface-subtle transition-colors cursor-pointer"
-                  title={language === 'ar' ? 'إخفاء المحادثات' : 'Collapse conversations'}
-                  aria-label={language === 'ar' ? 'إخفاء المحادثات' : 'Collapse conversations'}
-                >
-                  <PanelLeftClose className={clsx('w-4 h-4', direction === 'rtl' && 'scale-x-[-1]')} />
-                </button>
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-1.5 my-2 min-h-0 pr-1">
                 {sessions.map((sess) => {
                   const isActive = activeSessionId === sess.id;
                   return (
-                    <button
+                    <div
                       key={sess.id}
                       onClick={() => setActiveSessionId(sess.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setActiveSessionId(sess.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                       className={`w-full p-2.5 rounded-xl text-start transition-all cursor-pointer ${
                         isActive
                           ? 'bg-[#E8EEF5] border border-brand-navy/30 text-brand-navy font-semibold'
                           : 'hover:bg-surface-subtle text-text-secondary'
                       }`}
                     >
-                      <p className="text-xs font-bold text-text-primary truncate">
-                        {language === 'ar' ? sess.title : sess.titleEn}
-                      </p>
+                      <div className="flex items-start gap-2">
+                        <p className="text-xs font-bold text-text-primary truncate flex-1">
+                          {language === 'ar' ? sess.title : sess.titleEn}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={(event) => void handleDeleteSession(event, sess.id)}
+                          disabled={deletingSessionId === sess.id}
+                          className="shrink-0 p-1 rounded-md text-text-muted hover:text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                          title={language === 'ar' ? 'حذف المحادثة' : 'Delete conversation'}
+                          aria-label={language === 'ar' ? 'حذف المحادثة' : 'Delete conversation'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       <p className="text-[10px] text-text-muted mt-1 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         <span>{language === 'ar' ? sess.timeAgo : sess.timeAgoEn}</span>
                       </p>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -208,9 +388,30 @@ export default function AIAssistantPage() {
                 size="sm"
                 className="w-full shrink-0 mt-1"
                 onClick={() => {
-                  setActiveSessionId(null);
+                  if (!isDemoMode) {
+                    void createChatSession(
+                      language === 'ar' ? 'محادثة تحليل جديدة' : 'New Analysis Chat',
+                      accessToken,
+                    ).then((created) => {
+                      setSessions((prev) => [created, ...prev]);
+                      setActiveSessionId(created.id);
+                      setMessages([]);
+                    });
+                    return;
+                  }
+                  const newId = `sess_${Date.now()}`;
+                  setSessions([
+                    {
+                      id: newId,
+                      title: 'محادثة تحليل جديدة',
+                      titleEn: 'New Analysis Chat',
+                      timeAgo: 'الآن',
+                      timeAgoEn: 'Just now',
+                    },
+                    ...sessions,
+                  ]);
+                  setActiveSessionId(newId);
                   setMessages([]);
-                  setChatError(null);
                 }}
               >
                 + {language === 'ar' ? 'محادثة جديدة' : 'New Chat'}
@@ -227,7 +428,7 @@ export default function AIAssistantPage() {
                 <button
                   type="button"
                   onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-                  className="p-1.5 sm:p-2 rounded-xl border border-border bg-surface hover:bg-surface-subtle text-text-secondary hover:text-brand-navy transition-all cursor-pointer shadow-xs active:scale-95"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-brand-navy hover:bg-surface-subtle transition-all cursor-pointer shadow-xs active:scale-95"
                   title={
                     isHistoryOpen
                       ? (language === 'ar' ? 'إخفاء المحادثات' : 'Collapse conversations')
@@ -240,9 +441,9 @@ export default function AIAssistantPage() {
                   }
                 >
                   {isHistoryOpen ? (
-                    <PanelLeftClose className={clsx('w-4 h-4', direction === 'rtl' && 'scale-x-[-1]')} />
+                    <PanelLeftClose className={clsx('h-5 w-5', direction === 'rtl' && 'scale-x-[-1]')} strokeWidth={2.25} />
                   ) : (
-                    <PanelLeftOpen className={clsx('w-4 h-4', direction === 'rtl' && 'scale-x-[-1]')} />
+                    <PanelLeftOpen className={clsx('h-5 w-5', direction === 'rtl' && 'scale-x-[-1]')} strokeWidth={2.25} />
                   )}
                 </button>
 
@@ -254,30 +455,49 @@ export default function AIAssistantPage() {
                   <p className="text-[11px] text-text-muted">{t('ai.assistantSubtitle')}</p>
                 </div>
               </div>
+              <div
+                className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-semibold"
+                role="group"
+                aria-label={language === 'ar' ? 'طريقة إجابة المساعد' : 'Assistant answer mode'}
+                data-testid="assistant-mode-switch"
+              >
+                <span className="text-text-muted whitespace-nowrap">
+                  {language === 'ar' ? 'طريقة الإجابة:' : 'Answer mode:'}
+                </span>
+                <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+                <button
+                  type="button"
+                  onClick={() => setAssistantMode('auto')}
+                  className={clsx('rounded-md px-2 py-1 transition-colors', assistantMode === 'auto' ? 'bg-brand-navy text-white' : 'text-text-secondary hover:text-brand-navy')}
+                  aria-pressed={assistantMode === 'auto'}
+                  title={language === 'ar' ? 'يفصل تلقائيًا بين المستندات وGeneral وHybrid' : 'Automatically routes between documents, general, and hybrid'}
+                >
+                  {language === 'ar' ? 'تلقائي (مفضل)' : 'Auto (recommended)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAssistantMode('grounded')}
+                  className={clsx('rounded-md px-2 py-1 transition-colors', assistantMode === 'grounded' ? 'bg-brand-navy text-white' : 'text-text-secondary hover:text-brand-navy')}
+                  aria-pressed={assistantMode === 'grounded'}
+                  title={language === 'ar' ? 'الإجابة من مستندات CrediX فقط' : 'Answer from CrediX documents only'}
+                >
+                  {language === 'ar' ? 'المستندات' : 'Documents'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAssistantMode('general')}
+                  className={clsx('rounded-md px-2 py-1 transition-colors', assistantMode === 'general' ? 'bg-amber-600 text-white' : 'text-text-secondary hover:text-amber-700')}
+                  aria-pressed={assistantMode === 'general'}
+                  title={language === 'ar' ? 'إجابة AI عامة بدون استخدام مستندات CrediX' : 'General AI answer without CrediX document retrieval'}
+                >
+                  {language === 'ar' ? 'عام AI' : 'General AI'}
+                </button>
+                </div>
+              </div>
             </div>
-            {/* Application the questions are about */}
-            <div className="px-4 sm:px-6 py-2.5 border-b border-border bg-surface shrink-0">
-              <Select
-                label={language === 'ar' ? 'الطلب محل السؤال' : 'Application to ask about'}
-                value={selectedAppId}
-                onChange={(e) => setSelectedAppId(e.target.value)}
-                options={
-                  apps.length > 0
-                    ? apps.map((a) => ({ value: a.id, label: language === 'ar' ? a.name : a.nameEn }))
-                    : [{ value: '', label: language === 'ar' ? 'لا توجد طلبات' : 'No applications' }]
-                }
-              />
-            </div>
-            
+
             {/* Chat Messages Stream */}
             <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 text-xs min-h-0">
-              {messages.length === 0 && !isTyping && (
-                <p className="text-center text-text-muted pt-10">
-                  {language === 'ar'
-                    ? 'اختر الطلب من الأعلى ثم اكتب سؤالك، والمساعد يجيب من بيانات الطلب الفعلية.'
-                    : 'Pick an application above and ask your question. Answers come from the real application data.'}
-                </p>
-              )}              
               {messages.map((msg) => {
                 const isUser = msg.sender === 'user';
                 return (
@@ -304,11 +524,40 @@ export default function AIAssistantPage() {
                             : 'bg-surface-subtle text-text-primary border border-border'
                         }`}
                       >
-                        <p>{language === 'ar' ? msg.text : msg.textEn || msg.text}</p>
+                        {msg.segments && msg.segments.length > 0 ? (
+                          <div className="space-y-2">
+                            {msg.segments.map((segment, index) => (
+                              <div key={`${msg.id}-segment-${index}`}>
+                                <p>{segment.text}</p>
+                                <span className={clsx(
+                                  'mt-1 inline-block text-[10px] font-semibold',
+                                  segment.sourceType === 'ai_generated' ? 'text-amber-700' : 'text-brand-navy',
+                                )}>
+                                  {segment.supportStatus === 'unsupported'
+                                    ? (language === 'ar' ? 'لا يوجد دليل كافٍ' : 'Insufficient evidence')
+                                    : segment.sourceType === 'ai_generated'
+                                    ? (language === 'ar' ? 'شرح مولّد بالذكاء الاصطناعي' : 'AI-generated explanation')
+                                    : (language === 'ar' ? 'من المستندات' : 'From documents')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p>{language === 'ar' ? msg.text : msg.textEn || msg.text}</p>
+                        )}
                       </div>
 
+                      {/* Every general answer is visibly separated from document evidence. */}
+                      {!isUser && msg.provenance === 'ai_generated' && (
+                        <div className="pt-1 text-[11px] text-amber-700" data-testid="ai-generated-badge">
+                          {language === 'ar'
+                            ? (msg.disclaimer || 'إجابة مولّدة بالذكاء الاصطناعي وليست من المستندات.')
+                            : (msg.disclaimer || 'AI-generated answer; not retrieved from CrediX documents.')}
+                        </div>
+                      )}
+
                       {/* Document Citations Pills */}
-                      {!isUser && msg.citations && msg.citations.length > 0 && (
+                      {!isUser && msg.provenance !== 'ai_generated' && msg.citations && msg.citations.length > 0 && (
                         <div className="space-y-1.5 pt-1">
                           {msg.citations.map((c, i) => (
                             <div
@@ -354,7 +603,7 @@ export default function AIAssistantPage() {
                     <Bot className="w-4 h-4 animate-spin" />
                   </div>
                   <div className="p-3 bg-surface-subtle rounded-2xl text-xs text-text-secondary">
-                    {language === 'ar' ? 'جاري تحليل بيانات الطلب...' : 'Analyzing the application data...'}
+                    {language === 'ar' ? 'جاري استرجاع البيانات وتحليل المستندات بالـ RAG...' : 'Retrieving data and analyzing documents via RAG...'}
                   </div>
                 </div>
               )}
@@ -363,11 +612,6 @@ export default function AIAssistantPage() {
 
             {/* Prompt Suggestion Chips & Input */}
             <div className="p-3 sm:p-4 border-t border-border space-y-2.5 bg-surface shrink-0">
-              {chatError && (
-                <div className="p-2.5 rounded-xl bg-semantic-error-subtle border border-semantic-error/30 text-semantic-error text-[11px]">
-                  {chatError}
-                </div>
-              )}              
               {/* Chips */}
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
                 <button

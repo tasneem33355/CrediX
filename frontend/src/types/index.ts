@@ -1,7 +1,6 @@
 export type Language = 'ar' | 'en';
 
 export type UserRole = 'client' | 'officer';
-
 export type OfficerTier = 'junior_officer' | 'senior_officer' | 'risk_manager' | 'cro';
 
 export interface User {
@@ -10,12 +9,12 @@ export interface User {
   nameEn: string;
   email: string;
   role: UserRole;
-  officerTier?: OfficerTier;
-  approvalLimitEgp?: number;
-  canOverridePolicy?: boolean;
   avatar?: string;
   title?: string;
   titleEn?: string;
+  officerTier?: OfficerTier;
+  approvalLimitEgp?: number;
+  canOverridePolicy?: boolean;
 }
 
 export type LoanType = 'personal' | 'sme' | 'auto' | 'mortgage';
@@ -110,12 +109,12 @@ export interface LoanApplication {
   loanTypeLabel: string;
   loanTypeLabelEn: string;
   requestedAmount: number;
-  declaredMonthlyIncome?: number;
-  companyName?: string;
   currency: string;
   date: string;
   lastUpdated: string;
   status: ApplicationStatus;
+  declaredMonthlyIncome?: number;
+  companyName?: string;
   
   // AI Assessment & Explainability
   aiRecommendation: 'approve' | 'manual_review' | 'reject';
@@ -174,6 +173,15 @@ export interface ChatMessage {
     description: string;
     descriptionEn: string;
   };
+  answerMode?: 'grounded' | 'general' | 'hybrid' | 'insufficient_evidence';
+  provenance?: 'retrieved' | 'ai_generated' | 'mixed' | 'unavailable';
+  disclaimer?: string | null;
+  segments?: {
+    text: string;
+    sourceType: 'retrieved' | 'ai_generated';
+    citationHandles: string[];
+    supportStatus: 'supported' | 'inference' | 'unsupported';
+  }[];
 }
 
 export interface ChatSession {
